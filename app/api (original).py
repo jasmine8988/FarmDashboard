@@ -6,75 +6,64 @@ import re
 from datetime import datetime
 from dateutil import parser
 
-from flask import Blueprint, abort, jsonify, g, redirect, request, session, Response
-from flask_cors import CORS
+from flask import Blueprint, abort, jsonify, g, redirect, request, session
 from sqlalchemy import text, or_
 from werkzeug.security import check_password_hash, generate_password_hash
-
-import numpy as np
-import pandas as pd
-import plotly.subplots as psp
-import plotly.graph_objs as go
-import plotly.io as pio
-import plotly.figure_factory as ff
-import requests
-
-from scipy.stats import zscore
-from statsmodels.tsa.seasonal import STL
-from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler
-from sklearn.cluster import KMeans
 
 import config
 
 from . import utils
 from db import db
 
+from flask import Flask, render_template, jsonify, g, abort
+import logging
+import json
+import datetime
+from dateutil import parser
+from sqlalchemy import text, or_
+
 log = logging.getLogger("\033[1;33m[API]: \033[0m")
 api = Blueprint('API', __name__)
-CORS(api, resources={r"/*": {"origins": "*", "methods": ["GET", "POST", "PUT", "DELETE"]}})
 
 
-
-@api.route('/datas/<string:field>', methods=['GET']) #定義一個 API 路由，當用戶訪問 /datas/<field> 時，該函數將會處理請求。
-@utils.required_login #裝飾器，表示只有已登入的用戶才能訪問此路由。如果用戶未登入，將拒絕訪問。
-def api_query_all_data(field): #field 是從 URL 中取得的參數，表示特定的欄位名稱。
+@api.route('/datas/<string:field>', methods=['GET'])
+@utils.required_login
+def api_query_all_data(field):
     stime = datetime.now()
 
     res = {}
 
-    start = request.args.get('start') #從 URL 的查詢參數中獲取 start 時間
+    start = request.args.get('start')
     end = request.args.get('end')
-    limit = int(request.args.get('limit', config.QUERY_LIMIT)) #獲取查詢的資料筆數上限，默認值為 config.QUERY_LIMIT
+    limit = int(request.args.get('limit', config.QUERY_LIMIT))
 
     if start and end:
-        start = parser.parse(start) #使用 dateutil.parser.parse 函數將其解析為 datetime 對象，方便後續進行時間篩選
+        start = parser.parse(start)
         end = parser.parse(end)
 
     query_df = (g.session
-                 .query(db.models.field_sensor.df_name, #從資料庫db/models.py/def field_sensor 中查詢與指定 field 相關的感測器資料。這裡選擇了 df_name 和 field 兩個欄位。
-                        db.models.field_sensor.field) #使用query()從field_sensor選擇兩個欄位：df_name,field
-                 .select_from(db.models.field_sensor) #指定從 field_sensor 表開始查詢。
-                 .join(db.models.sensor) #加入 sensor 表，將感測器和欄位的資料聯結在一起。
-                 .join(db.models.field) #加入 field 表，將感測器和欄位的資料聯結在一起。
-                 .filter(db.models.field.name == field) #過濾欄位名稱等於傳入的 field 的資料。
-                 .all()) #使用all()執行查詢並將結果全部返回
-    #query_df = [('AtPressure-O', 2), ('Humidity-O', 2), ('Temperature-O', 2), (df_name1, field_id1) ...]
+                 .query(db.models.field_sensor.df_name,
+                        db.models.field_sensor.field)
+                 .select_from(db.models.field_sensor)
+                 .join(db.models.sensor)
+                 .join(db.models.field)
+                 .filter(db.models.field.name == field)
+                 .all())
 
-    
     for df_name, field_id in query_df:
         tablename = df_name.replace('-O', '')
-        table = getattr(db.models, tablename) #到db/models.py獲取跟df_name名字一樣的function，就可以得到資料
-        query = g.session.query(table).filter(table.field == field_id) #查詢該感測器資料表中與當前 field_id 匹配的數據。
-        if start and end: #如果有時間範圍，則進一步篩選時間在 start 和 end 之間的數據。
+        table = getattr(db.models, tablename)
+        query = g.session.query(table).filter(table.field == field_id)
+        if start and end:
             query = query.filter(table.timestamp >= start, table.timestamp <= end)
-        query = query.order_by(table.timestamp.desc()).limit(limit).all() #按照時間降序排序，並限制返回的數據筆數，然後執行查詢返回結果。
+        query = query.order_by(table.timestamp.desc()).limit(limit).all()
 
-        res.update({df_name: [(str(record.timestamp), record.value) for record in query]}) #將查詢結果更新到 res 字典中，鍵為 df_name，值為感測器數據（timestamp,value）。
+        res.update({df_name: [(str(record.timestamp), record.value) for record in query]})
 
     etime = datetime.now()
     log.debug((etime - stime).total_seconds())
     return jsonify(res)
+
 
 @api.route('/datas/<string:field>/<string:df_name>', methods=['GET'])
 @utils.required_login
@@ -108,6 +97,7 @@ def api_query_field_data(field, df_name):
     etime = datetime.now()
     log.debug((etime - stime).total_seconds())
     return jsonify(res)
+
 
 @api.route('/datas', methods=['GET'])
 @utils.required_login
@@ -146,9 +136,15 @@ def api_datas():
     end = parser.parse(end_time).strftime('%Y-%m-%d %H:%M:%S')
 
     result = {sensor1: {}}
+    print('result: ',result)
 
     data1 = _query_data(interval, table1.__tablename__, field1, start, end, limit)
     result[sensor1].update({field1: data1})
+    print('data1: ',data1)
+    print('result_now: ',result)
+    #result_now:  {'AtPressure-O': {'test': [{'timestamp': '2024-04-22 21:40:00', 'value': '4675.61'}, {'timestamp': '2024-04-22 21:39:47', 'value': '7459.96'}]}}
+    print('result[sensor1]: ',result[sensor1])
+    print('jsonify(result): ',jsonify(result))
 
     field2 = request.args.get('f2')
     if field2:
@@ -159,10 +155,165 @@ def api_datas():
             result[sensor2] = {}
         data2 = _query_data(interval, table2.__tablename__, field2, start, end, limit)
         result[sensor2].update({field2: data2})
+        print('result_last: ',result)
+	
+    etime = datetime.now()
+    log.debug((etime - stime).total_seconds())
+    return jsonify(result)
+
+
+#測試：拿取資料庫的data，繪製圖表 plot
+@api.route('/datas_plot', methods=['GET'])
+@utils.required_login
+def api_datas_plot():
+    '''
+    :args f1: field, like `flower`, `orange`, etc
+    :args f2: field, like `flower`, `orange`, etc
+    :args s1: sensor, like `AtPressure`, `UV1`, etc
+    :args s2: sensor, like `AtPressure`, `UV1`, etc
+    :args st: start_time, any time format
+    :args et: end_time, any time format
+    :args i: interval, only allow `second`, `minute`, `hour`, `day`, default `hour`
+    :args l: limit, query limit, default config.QUERY_LIMIT
+
+    example:
+        http://your.domain/api/datas?f1=flower&f2=orange&s1=Temperature&s2=AtPressure&st=2018-06-26&et=2018-06-27&i=second
+    '''
+    stime = datetime.now()
+
+    field1 = request.args.get('f1')
+    sensor1 = request.args.get('s1')
+    start_time = request.args.get('st')
+    end_time = request.args.get('et')
+    interval = request.args.get('i', 'hour')
+    limit = int(request.args.get('l')) if request.args.get('l') else None
+
+    if not field1 or not sensor1 or not start_time or not end_time:
+        abort(404)
+
+    tablename1 = sensor1.replace('-O', '')
+    if not hasattr(db.models, tablename1):
+        abort(404)
+
+    table1 = getattr(db.models, tablename1)
+    start = parser.parse(start_time).strftime('%Y-%m-%d %H:%M:%S')
+    end = parser.parse(end_time).strftime('%Y-%m-%d %H:%M:%S')
+
+    result = {sensor1: {}}
+    print('result: ',result)
+    #result:  {'AtPressure-O': {}}
+
+    data1 = _query_data_plot(interval, table1.__tablename__, field1, start, end, limit)
+    result[sensor1].update({field1: data1})
+    print('result_now: ',result)
+    #result_now:  {'AtPressure-O': {'test': [{'timestamp': '2024-04-22 21:40:00', 'value': '4675.61'}, {'timestamp': '2024-04-22 21:39:47', 'value': '7459.96'}]}}
+    print('result[sensor1]: ',result[sensor1])
+    #result[sensor1]:  {'test': [{'timestamp': '2024-04-22 21:40:00', 'value': '4675.61'}, {'timestamp': '2024-04-22 21:39:47', 'value': '7459.96'}]}
+    print('jsonify(result): ',jsonify(result))
+
+    field2 = request.args.get('f2')
+    if field2:
+        sensor2 = request.args.get('s2')
+        tablename2 = sensor2.replace('-O', '')
+        table2 = getattr(db.models, tablename2)
+        if not result.get(sensor2):
+            result[sensor2] = {}
+        data2 = _query_data_plot(interval, table2.__tablename__, field2, start, end, limit)
+        result[sensor2].update({field2: data2})
 
     etime = datetime.now()
     log.debug((etime - stime).total_seconds())
     return jsonify(result)
+
+
+def _query_data_plot(interval, table_name, field, start, end, limit):
+    raw_sql = _get_mysql_raw_sql_plot(interval, table_name, field, start, end, limit)
+    query = g.session.execute(raw_sql).fetchall()
+    print('raw_sql: ',raw_sql)
+    print('query: ',query)
+    #raw_sql:  
+            #SELECT sensor.timestamp, sensor.value
+            #FROM {atpressure} as sensor
+            #LEFT JOIN field on field.id = sensor.field
+            #WHERE field.name = '{test}' and
+             #     sensor.timestamp >= '{2024-04-01 00:00:00}' and
+              #    sensor.timestamp <= '{2024-05-01 23:59:59}'
+            #ORDER BY sensor.timestamp DESC
+
+    #query:  [(datetime.datetime(2024, 4, 22, 21, 40), 4675.61), (datetime.datetime(2024, 4, 22, 21, 39, 47), 7459.96),...]
+
+    datas = []
+    for row in query:
+        data = {}
+        for key in row.keys():
+            data[key] = str(row[key])
+        datas.append(data)
+    
+    print('datas: ',datas)
+    #datas:  [{'timestamp': '2024-04-22 21:40:00', 'value': '4675.61'}, {'timestamp': '2024-04-22 21:39:47', 'value': '7459.96'}, ...]
+
+    return datas
+
+
+def _get_mysql_raw_sql_plot(interval, table_name, field, start, end, limit):
+    if interval == 'second':
+        raw_sql = text('''
+            SELECT sensor.timestamp, sensor.value
+            FROM {} as sensor
+            LEFT JOIN field on field.id = sensor.field
+            WHERE field.name = '{}' and
+                  sensor.timestamp >= '{}' and
+                  sensor.timestamp <= '{}'
+            ORDER BY sensor.timestamp DESC
+        '''.format(table_name, field, start, end))
+    elif interval == 'minute':
+        raw_sql = text('''
+            SELECT MINUTE(sensor.timestamp) as minute,
+                   HOUR(sensor.timestamp) AS hour,
+                   DATE(sensor.timestamp) AS date,
+                   AVG(sensor.value) AS value
+            FROM {} as sensor
+            LEFT JOIN field on field.id = sensor.field
+            WHERE field.name = '{}' and
+                  sensor.timestamp >= '{}' and
+                  sensor.timestamp <= '{}'
+            GROUP BY minute, hour, date
+            ORDER BY date DESC, hour DESC, minute DESC
+        '''.format(table_name, field, start, end))
+    elif interval == 'hour':
+        raw_sql = text('''
+            SELECT HOUR(sensor.timestamp) AS hour,
+                   DATE(sensor.timestamp) AS date,
+                   AVG(sensor.value) AS value
+            FROM {} as sensor
+            LEFT JOIN field on field.id = sensor.field
+            WHERE field.name = '{}' and
+                  sensor.timestamp >= '{}' and
+                  sensor.timestamp <= '{}'
+            GROUP BY hour, date
+            ORDER BY date DESC, hour DESC
+        '''.format(table_name, field, start, end))
+    elif interval == 'day':
+        raw_sql = text('''
+            SELECT DATE(sensor.timestamp) AS date,
+                   AVG(sensor.value) AS value
+            FROM {} as sensor
+            LEFT JOIN field on field.id = sensor.field
+            WHERE field.name = '{}' and
+                  sensor.timestamp >= '{}' and
+                  sensor.timestamp <= '{}'
+            GROUP BY date
+            ORDER BY date DESC
+        '''.format(table_name, field, start, end))
+    else:
+        abort(404)
+
+    if limit:
+        raw_sql += 'LIMIT {}'.format(limit)
+
+    return raw_sql
+#測試結束
+
 
 @api.route('/export_datas', methods=['GET'])
 @utils.required_login
@@ -227,121 +378,79 @@ def _query_data(interval, table_name, field, start, end, limit):
     raw_sql = _get_mysql_raw_sql(interval, table_name, field, start, end, limit)
     query = g.session.execute(raw_sql).fetchall()
 
+    print('raw_sql: ',raw_sql)
+    print('query: ',query)
+
     datas = []
     for row in query:
         data = {}
         for key in row.keys():
             data[key] = str(row[key])
         datas.append(data)
+        
+    print('datas: ',datas)
+    #datas:  [{'timestamp': '2024-04-22 21:40:00', 'value': '4675.61'}, {'timestamp': '2024-04-22 21:39:47', 'value': '7459.96'}, {'timestamp': '2024-04-22 21:39:27', 'value': '4334.28'}, ...]
 
     return datas
 
 
 def _get_mysql_raw_sql(interval, table_name, field, start, end, limit):
     if interval == 'second':
-        raw_sql = text(f'''
+        raw_sql = text('''
             SELECT sensor.timestamp, sensor.value
-            FROM {table_name} as sensor
+            FROM {} as sensor
             LEFT JOIN field on field.id = sensor.field
-            WHERE field.name = '{field}' and
-                  sensor.timestamp >= '{start}' and
-                  sensor.timestamp <= '{end}'
+            WHERE field.name = '{}' and
+                  sensor.timestamp >= '{}' and
+                  sensor.timestamp <= '{}'
             ORDER BY sensor.timestamp DESC
-        ''')
+        '''.format(table_name, field, start, end))
     elif interval == 'minute':
-        raw_sql = text(f'''
+        raw_sql = text('''
             SELECT MINUTE(sensor.timestamp) as minute,
                    HOUR(sensor.timestamp) AS hour,
                    DATE(sensor.timestamp) AS date,
                    AVG(sensor.value) AS value
-            FROM {table_name} as sensor
+            FROM {} as sensor
             LEFT JOIN field on field.id = sensor.field
-            WHERE field.name = '{field}' and
-                  sensor.timestamp >= '{start}' and
-                  sensor.timestamp <= '{end}'
+            WHERE field.name = '{}' and
+                  sensor.timestamp >= '{}' and
+                  sensor.timestamp <= '{}'
             GROUP BY minute, hour, date
             ORDER BY date DESC, hour DESC, minute DESC
-        ''')
+        '''.format(table_name, field, start, end))
     elif interval == 'hour':
-        raw_sql = text(f'''
+        raw_sql = text('''
             SELECT HOUR(sensor.timestamp) AS hour,
                    DATE(sensor.timestamp) AS date,
                    AVG(sensor.value) AS value
-            FROM {table_name} as sensor
+            FROM {} as sensor
             LEFT JOIN field on field.id = sensor.field
-            WHERE field.name = '{field}' and
-                  sensor.timestamp >= '{start}' and
-                  sensor.timestamp <= '{end}'
+            WHERE field.name = '{}' and
+                  sensor.timestamp >= '{}' and
+                  sensor.timestamp <= '{}'
             GROUP BY hour, date
             ORDER BY date DESC, hour DESC
-        ''')
+        '''.format(table_name, field, start, end))
     elif interval == 'day':
-        raw_sql = text(f'''
+        raw_sql = text('''
             SELECT DATE(sensor.timestamp) AS date,
                    AVG(sensor.value) AS value
-            FROM {table_name} as sensor
+            FROM {} as sensor
             LEFT JOIN field on field.id = sensor.field
-            WHERE field.name = '{field}' and
-                  sensor.timestamp >= '{start}' and
-                  sensor.timestamp <= '{end}'
+            WHERE field.name = '{}' and
+                  sensor.timestamp >= '{}' and
+                  sensor.timestamp <= '{}'
             GROUP BY date
             ORDER BY date DESC
-        ''')
+        '''.format(table_name, field, start, end))
     else:
         abort(404)
 
     if limit:
-        raw_sql += f'LIMIT {limit}'
+        raw_sql += 'LIMIT {}'.format(limit)
 
     return raw_sql
-
-# 新增動態處理函數
-@api.route('/dynamic_datas', methods=['GET'])
-@utils.required_login
-def api_dynamic_datas():
-    """
-    :args f: fields, like ['flower', 'orange']
-    :args s: sensors, like ['Temperature', 'AtPressure']
-    :args st: start_time, any time format
-    :args et: end_time, any time format
-    :args i: interval, only allow `second`, `minute`, `hour`, `day`, default `hour`
-    :args l: limit, query limit, default config.QUERY_LIMIT
-
-    example:
-        http://your.domain/api/dynamic_datas?f=flower&f=orange&s=Temperature&s=AtPressure&st=2018-06-26&et=2018-06-27&i=second
-    """
-    stime = datetime.now()
-
-    fields = request.args.getlist('f')
-    sensors = request.args.getlist('s')
-    start_time = request.args.get('st')
-    end_time = request.args.get('et')
-    interval = request.args.get('i', 'hour')
-    limit = int(request.args.get('l')) if request.args.get('l') else None
-
-    if not fields or not sensors or not start_time or not end_time:
-        abort(404)
-
-    start = parser.parse(start_time).strftime('%Y-%m-%d %H:%M:%S')
-    end = parser.parse(end_time).strftime('%Y-%m-%d %H:%M:%S')
-
-    result = {}
-
-    for field, sensor in zip(fields, sensors):
-        tablename = sensor.replace('-O', '')
-        if not hasattr(db.models, tablename):
-            abort(404)
-        table = getattr(db.models, tablename)
-
-        if sensor not in result:
-            result[sensor] = {}
-        
-        data = _query_data(interval, table.__tablename__, field, start, end, limit)
-        result[sensor].update({field: data})
-
-    etime = datetime.now()
-    log.debug((etime - stime).total_seconds())
-    return jsonify(result)
 
 
 @api.route('/user/pwd', methods=['POST'])
@@ -591,7 +700,7 @@ def api_sensor():
         if sensor_record > 0:
             return 'The sensor name "{}" or df_name "{}" already exists'.format(name, df_name), 404
 
-        db.inject_new_model(re.sub(r'-O[\d]*$', '', df_name))
+        db.inject_new_model(re.sub(r'-O', '', df_name))
 
         new_sensor = db.models.sensor(df_name=df_name,
                                       name=request.json.get('name'),
@@ -627,7 +736,7 @@ def api_sensor():
         if sensor_record > 0:
             return 'The sensor name "{}" or df_name "{}" already exists'.format(name, df_name), 404
 
-        db.inject_new_model(re.sub(r'-O[\d]*$', '', df_name))
+        db.inject_new_model(re.sub(r'-O', '', df_name))
 
         (g.session
           .query(db.models.sensor)
@@ -811,339 +920,3 @@ def api_field():
         return 'ok'
 
     abort(404)
- 
-# Z-Score 離群值檢測       
-@api.route('/detect_outliers', methods=['POST'])
-@utils.required_login
-def detect_outliers():
-    data = request.json['data']
-    data = np.array(data)
-    
-    # 計算 z-scores
-    z_scores = zscore(data)
-    
-    # 找出 z-score 絕對值大於閾值的離群值 # config.ZSCORE_THRESHOLD預設為3
-    outliers = np.abs(z_scores) > config.ZSCORE_THRESHOLD
-    
-    # 返回布爾值陣列，標記是否為離群值
-    return jsonify(outliers.tolist())
-    
-# Z-Score 離群值檢測
-@api.route('/outlier_detection', methods=['POST'])
-@utils.required_login
-def outlier_detection():
-    try:
-        # 接收前端傳來的資料
-        timestamps = request.json['timestamps']
-        values = request.json['values']
-        zscore_threshold = request.json.get('zscoreThreshold', 3)  # 預設閾值為3
-        
-        # 將數據轉換為 DataFrame
-        df = pd.DataFrame({'time': timestamps, 'value': values})
-        df['time'] = pd.to_datetime(df['time'])  # 確保時間格式正確
-        df.set_index('time', inplace=True)
-        
-        # 計算 Z-score
-        mean = df['value'].mean()
-        std_dev = df['value'].std()
-        df['zscore'] = (df['value'] - mean) / std_dev
-        
-        # 根據 Z-score 閾值篩選離群值
-        outlier_indices = df[df['zscore'].abs() > zscore_threshold].index.tolist()
-        outlier_index_positions = [df.index.get_loc(index) for index in outlier_indices]
-        
-        # 返回離群值的索引
-        return jsonify({
-            'outlierIndices': outlier_index_positions
-        })
-    except Exception as e:
-        log.error(f"Error in Z-score outlier detection: {str(e)}")
-        return jsonify({"error": str(e)}), 500
-        
-    
-# STL 資料分解
-@api.route('/stl_decomposition', methods=['POST'])
-@utils.required_login
-def stl_decomposition():
-    try:
-        # 接收前端傳送的時間序列資料
-        x_data = request.json['x']  # 接收時間數據
-        y_data = request.json['y']  # 接收對應的數值數據
-        period = request.json.get('period', 7)  # 週期，預設12（根據資料的性質可調整）
-        
-        # 構建 DataFrame，並將 x_data 作為索引
-        df = pd.DataFrame({'time': x_data, 'value': y_data})
-        df['time'] = pd.to_datetime(df['time'])  # 將時間轉換為 datetime 格式
-        df.set_index('time', inplace=True)  # 設置時間為索引
-        
-        if len(df.columns) != 1:
-            return jsonify({"error": "Only one column of data is expected."}), 400
-        
-        # 對 value 進行 STL 分解
-        stl = STL(df['value'], period=period)
-        result = stl.fit()
-
-        fig = psp.make_subplots(rows=4, cols=1, shared_xaxes=True, vertical_spacing=0.02,
-                                subplot_titles=["Observed", "Trend", "Seasonal", "Residual"])
-        # 繪製觀察值
-        fig.add_trace(go.Scatter(x=df['value'].index, y=result.observed, mode='lines', name='Observed'), row=1, col=1)
-        # 繪製趨勢
-        fig.add_trace(go.Scatter(x=df['value'].index, y=result.trend, mode='lines', name='Trend'), row=2, col=1) #line=dict(color='red')
-        # 繪製季節性
-        fig.add_trace(go.Scatter(x=df['value'].index, y=result.seasonal, mode='lines', name='Seasonal'), row=3, col=1) #, line=dict(color='green')
-        # 繪製殘差
-        fig.add_trace(go.Scatter(x=df['value'].index, y=result.resid, mode='lines', name='Residual'), row=4, col=1) #, line=dict(color='purple')
-        # 更新整個圖表的佈局
-        fig.update_layout(height=900, title="STL Decomposition Chart", showlegend=False)
-
-        # 將圖表轉換為 JSON 格式，傳回前端
-        graph_json = pio.to_json(fig)
-
-        return jsonify({
-            'trend': result.trend.tolist(),
-            'seasonal': result.seasonal.tolist(),
-            'resid': result.resid.tolist(),
-            'graph': graph_json
-        })
-    except Exception as e:
-        log.error(f"Error in STL decomposition: {str(e)}")
-        return jsonify({"error": str(e)}), 500
-        
-
-# 特徵關聯矩陣的字體顏色調整模組
-def add_annotations_with_colors(fig, z_values, x_labels, y_labels, colorscale='Blues'):
-    from plotly.colors import sample_colorscale, hex_to_rgb
-    annotations = []
-    for i, row in enumerate(z_values):
-        for j, value in enumerate(row):
-            color = sample_colorscale(colorscale, value, low=0, high=1)[0]
-            r, g, b = hex_to_rgb(color)
-            brightness = 0.299 * r + 0.587 * g + 0.114 * b
-            text_color = 'white' if brightness < 128 else 'black'
-            annotations.append(
-                dict(
-                    x=x_labels[j],
-                    y=y_labels[i],
-                    text=f'{value:.2f}',
-                    showarrow=False,
-                    font=dict(color=text_color)
-                )
-            )
-    fig.update_layout(annotations=annotations)
-
-
-# 特徵關聯矩陣
-@api.route('/correlation_matrix', methods=['POST'])
-@utils.required_login
-def correlation_matrix():
-    try:
-        # 從請求中提取 traces
-        traces = request.json['traces']
-
-        # 將 traces 數據轉換為多個 DataFrame
-        dfs = []
-        for trace in traces:
-            if 'timestamps' in trace and 'values' in trace and 'field' in trace and 'sensor' in trace:
-                column_name = f"{trace['field']}-{trace['sensor']}"
-                df = pd.DataFrame({
-                    'timestamps': pd.to_datetime(trace['timestamps']),
-                    column_name: trace['values']
-                }).set_index('timestamps')
-                dfs.append(df)
-
-        # 合併所有 DataFrame，按時間戳對齊
-        df_all = pd.concat(dfs, axis=1)
-        # 填充缺失值（可以選擇插值或直接用 NaN）
-        df_all = df_all.interpolate(method='time')  # 時間插值
-
-        # 計算相關係數矩陣
-        correlation_matrix = df_all.corr()
-
-        # 使用 Plotly 繪製特徵關聯矩陣
-        fig = ff.create_annotated_heatmap(
-            z=correlation_matrix.values,
-            x=list(correlation_matrix.columns),
-            y=list(correlation_matrix.index),
-            annotation_text=correlation_matrix.round(2).values,
-            colorscale='Blues',
-            showscale=True
-        )
-
-        # 返回整個圖表的 JSON 格式
-        return jsonify({'fig': pio.to_json(fig)})
-
-    except Exception as e:
-        # 錯誤處理
-        print(f"Error: {str(e)}")
-        return jsonify({'error': str(e)}), 400
-
-
-@api.route('/cluster', methods=['POST'])
-@utils.required_login
-def kmeans_cluster():
-    try:
-        # 接收前端傳來的資料
-        timestamps = request.json['timestamps']
-        values = request.json['values']
-        num_clusters = request.json.get('numClusters', 3)  # 默認分群數為3
-
-        # 將數據轉換為 DataFrame
-        df = pd.DataFrame({'time': timestamps, 'value': values})
-        df['time'] = pd.to_datetime(df['time'])
-        df.set_index('time', inplace=True)
-
-        # 過濾出數值欄位並移除空值
-        numeric_data = df[['value']].dropna()
-
-        # 確保數據量足夠進行 PCA 降維
-        if len(numeric_data) < 2:
-            raise ValueError("Not enough data points for PCA. At least 2 samples are required.")
-
-        # 標準化數據
-        scaler = StandardScaler()
-        scaled_data = scaler.fit_transform(numeric_data)
-
-        # 使用 PCA 將數據降維到 2 個主成分
-        pca = PCA(n_components=min(2, len(numeric_data.columns)))
-        pca_data = pca.fit_transform(scaled_data)
-
-        # 使用 KMeans 進行分群
-        kmeans = KMeans(n_clusters=num_clusters, random_state=42)
-        clusters = kmeans.fit_predict(pca_data)
-
-        # 準備返回結果，包括 PCA 資料和分群標籤
-        result = {
-            'pcaData': pca_data.tolist(),
-            'clusterLabels': clusters.tolist()
-        }
-
-        return jsonify(result)
-    except Exception as e:
-        log.error(f"Error in KMeans clustering: {str(e)}")
-        return jsonify({"error": str(e)}), 500
-        
-        
-@api.route('/plotly', methods=['POST'])
-@utils.required_login
-def plotly_api():
-    try:
-        # 從前端的請求中獲取資料，分別為 traces 跟 plot_method
-        traces = request.json['traces']
-        plot_method = request.json.get('plotmethod', 'line')
-        print(traces)
-        print(plot_method)
-
-        all_traces = []
-        for trace_data in traces: # 分別對每筆資料集進行繪圖，並存入 all_traces
-            x = timestamps = trace_data['timestamps']
-            y = values = trace_data['values']
-            field = trace_data.get('field')
-            sensor = trace_data.get('sensor')
-            name = f"{field} - {sensor}" # DashBoard會截取field跟sensor，其他系統不需要，因此可以將name設定成自己的變數名稱
-
-            trace, layout = create_trace(plot_method, x, y, name) # 創建單個 trace，並依序加入到 all_traces
-            all_traces.append(trace)
-        
-        # print(all_traces)
-        # 使用 to_plotly_json() 轉換 traces 和 layout ，這樣前端才能應用
-        serialized_traces = [trace.to_plotly_json() for trace in all_traces]
-        print(serialized_traces)
-
-        # 將 traces 和 layout 分別返回
-        return jsonify({'traces': serialized_traces, 'layout': layout}), 200
-
-    except Exception as e:
-        # 錯誤訊息以幫助診斷問題
-        print(f"Error: {str(e)}")
-        return jsonify({'error': str(e)}), 400
-
-# 生成繪圖資料trace的函式
-def create_trace(plot_method, x, y, name): # DashBoard通常為時間序列資料，因此這裡的x = timestamps, y = values
-    trace = go.Scatter(x=x, y=y, name=name, mode='lines+markers' if plot_method == 'line' else 'markers') # 預設trace
-    layout = {
-      'xaxis': {'title': 'Time', 'tickformat': '%Y-%m-%d %H:%M:%S', 'tickangle': 45},
-      'yaxis': {'title': 'Value'}
-    } # 預設layout
-
-    if plot_method == 'heatmap':
-        z_values = np.array(y).reshape(1, len(y)).tolist()
-        trace = go.Heatmap(
-            x=x,
-            y=[name],
-            z=z_values,
-            colorscale='Viridis',
-            showscale=True
-        )
-    elif plot_method == 'box':
-      trace = go.Box(y=y, name=name)
-    elif plot_method == 'bar':
-      trace = go.Bar(x=x, y=y, name=name)
-    elif plot_method == 'histogram':
-      trace = go.Histogram(x=y, name=name)
-      layout = {'xaxis': {}, 'yaxis': {}}
-    elif plot_method == 'area':
-      trace = go.Scatter(x=x, y=y, name=name, mode='lines', fill='tozeroy')    
-
-    return trace, layout
-    
-
-DATATALK_URL = "https://aitalk.danny.iottalk.tw/datatalk/databank/third-Databank/"
-
-@api.route('/proxy', methods=['PUT'])
-def proxy_request():
-    try:
-        print("Received PUT request at /proxy")  # 紀錄請求
-
-        # 取得前端傳來的 JSON
-        data = request.json  
-        print("Received Data:", data)  # 印出前端傳來的 JSON {user:'', name:''}
-                
-        if not data:
-          return jsonify({"error": "No data received"}), 400  # 回傳 Bad Request
-
-        
-        # 將請求轉發到 `aitalk.danny.iottalk.tw`
-        response = requests.put(DATATALK_URL, json=data, headers={'Content-Type': 'application/json'})
-        
-        print("🖥️ AITALK Response Status:", response.status_code)  # 印出 AITALK API 回應的狀態碼
-        #print("📝 AITALK Response Data:", response.text)  # 印出 AITALK API 回應的內容
-
-        # 檢查是否成功
-        if response.status_code == 200:
-            return jsonify(response.json()), 200
-        else:
-            return jsonify({"error": "Failed to connect to AITalk", "status_code": response.status_code}), response.status_code
-    except Exception as e:
-        print("❌ Error occurred:")
-        return jsonify({"error": str(e)}), 500
-        
-        
-@api.route('/save_datatalk_method', methods=['POST'])
-@utils.required_login
-def save_datatalk_method():
-    """
-    存儲 DataTalk 回傳的 user、name 和 data
-    """
-    try:
-        data = request.json
-        user = data.get('user')
-        name = data.get('name')
-        datatalk_data = json.dumps(data.get('datatalk_data'))  # 轉換為 JSON 字串儲存
-        print(data)
-        print(datatalk_data)
-
-        if not user or not name or not datatalk_data:
-            return jsonify({"error": "缺少必要參數"}), 400
-
-        # 建立新紀錄
-        new_entry = db.models.DatatalkMethod(user=user, name=name, datatalk_data=datatalk_data)
-        g.session.add(new_entry)
-        g.session.commit()
-
-        return jsonify({"message": "成功儲存 DataTalk 方法", "id": new_entry.id}), 200
-
-    except Exception as e:
-        log.error(f"Error saving DataTalk method: {str(e)}")
-        return jsonify({"error": str(e)}), 500
-
-

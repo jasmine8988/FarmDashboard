@@ -651,3 +651,30 @@ class user_access(base):
                    ForeignKey('field.id'),
                    nullable=False)
     is_active = Column(Boolean, nullable=False, default=False)
+    
+    
+class DatatalkMethod(base):
+    __tablename__ = 'datatalk_method'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user = Column(String(255), nullable=False)
+    name = Column(String(255), nullable=False)
+    datatalk_data = Column(Text, nullable=False)  # 存 JSON 格式的 DataTalk 回傳數據
+
+
+class PHZ(base):
+    __tablename__ = 'phz'
+    timestamp = Column(DateTime, primary_key=True, nullable=False)
+    field = Column(Integer, ForeignKey('field.id'), primary_key=True, nullable=False)
+    value = Column(Float)
+    __table_args__ = (UniqueConstraint('field',
+                                       'timestamp',
+                                       name='UC_field_time'),)
+
+class UV(base):
+    __tablename__ = 'uv'
+    timestamp = Column(DateTime, primary_key=True, nullable=False)
+    field = Column(Integer, ForeignKey('field.id'), primary_key=True, nullable=False)
+    value = Column(Float)
+    __table_args__ = (UniqueConstraint('field',
+                                       'timestamp',
+                                       name='UC_field_time'),)

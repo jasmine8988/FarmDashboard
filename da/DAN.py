@@ -26,7 +26,8 @@ class DAN():
     def __init__(self, profile=None, host=None, mac_addr=None):
         self.profile = profile
         if host:
-            self.csmapi = CSMAPI('http://{host}'.format(host=host))
+            #self.csmapi = CSMAPI('http://{host}'.format(host=host))
+            self.csmapi = CSMAPI('{host}'.format(host=host))
         else:
             self.csmapi = CSMAPI(None)
 
@@ -92,7 +93,7 @@ class DAN():
             log.info(self.profile['d_name'] + ': Searching for the IoTtalk server...')
             data, addr = s.recvfrom(1024)
             if str(data.decode()) == 'easyconnect':
-                self.csmapi.host = 'http://{}'.format(addr[0])
+                self.csmapi.host = 'http://{}:9999'.format(addr[0])
                 break
 
     def register_device(self, profile=None, host=None, mac_addr=None):
@@ -114,7 +115,8 @@ class DAN():
 
 
         if host:
-            self.csmapi.host = 'http://{host}'.format(host=host)
+            #self.csmapi.host = 'http://{host}'.format(host=host)
+            self.csmapi.host = '{host}'.format(host=host)
         elif not self.csmapi.host:
             _input = input('Do you want to search local server? (y/n):')
             if _input.upper() in ['YES', 'Y']:
