@@ -1,0 +1,790 @@
+{% extends 'base/base.html' %} 
+
+{% block page_title %} <span style="font-size: 30px;">{{ _('Data Analysis') }}</span> {% endblock %}
+
+{% block page_content %}
+<div class="row" id="app">
+  <!-- Dynamic add fields and sensors -->
+  <div v-for="(item, index) in fieldsSensors" :key="index">
+    <!-- Field -->
+    <div class="col-sm-6 col-xs-12">
+      <label :for="'field' + index" style="font-size: 20px;">{{ _('Field') }}{{ '{{ index + 1 }}' }}:</label>
+      <select class="form-control" :id="'field' + index" v-model="item.active_field" @change="field_change(index)">
+        <!-- Default option 'none' -->
+        <option value="None">{{ _('None') }}</option>
+        <template v-for="field in fields">
+          <option :value="field.name">{{ '{{ field.alias }}' }}</option>
+        </template>
+      </select>
+    </div>
+    <!-- Sensor -->
+    <div class="col-sm-6 col-xs-12">
+      <label :for="'sensor' + index" style="font-size: 20px;">{{ _('Sensor') }}{{ '{{ index + 1 }}' }}:</label>
+      <select class="form-control" :id="'sensor' + index" v-model="item.active_sensor">
+        <template v-for="sensor in item.active_sensors">
+          <option :value="sensor.df_name">{{ '{{ sensor.alias }}' }}</option>
+        </template>
+      </select>
+    </div>
+  </div>
+  
+  <!-- Add fields and sensors (Button) -->
+  <div class="col-sm-1 col-xs-6">
+    <br>
+    <button class="btn btn-primary" style="width: 100%;" @click="addFieldSensor" style="font-size: 20px;">{{ _('Add New') }}</button>
+  </div>
+  <div class="clearfix"></div>
+
+
+  <!-- start time -->
+  <div class="col-sm-4 col-xs-12">
+    <br>
+    <label for="start-time" style="font-size: 20px;">{{ _('StartTime') }}: </label>
+    <div class="input-group date">
+      <div class="input-group-addon">
+        <i class="fa fa-calendar"></i>
+      </div>
+      <input class="form-control" type='date' id="start-time" />
+    </div>
+  </div>
+
+  <!-- end time -->
+  <div class="col-sm-4 col-xs-12">
+    <br>
+    <label for="end-time" style="font-size: 20px;">{{ _('EndTime') }}: </label>
+    <div class="input-group date">
+      <div class="input-group-addon">
+        <i class="fa fa-calendar"></i>
+      </div>
+      <input class="form-control" type='date' id="end-time" />
+    </div>
+  </div>
+
+  <!-- interval -->
+  <div class="col-sm-4 col-xs-12">
+    <br>
+    <label for="interval" style="font-size: 20px;">{{ _('Interval') }}:</label>
+    <select class="form-control" id="interval">
+      <option value="second">{{ _('Second') }}</option>
+      <option value="minute">{{ _('Minute') }}</option>
+      <option value="hour" selected>{{ _('Hour') }}</option>
+      <option value="day">{{ _('Day') }}</option>
+    </select>
+  </div>
+  
+  
+  <!-- analysis option -->  
+  <div class="col-sm-3 col-xs-12">
+    <br>  
+    <label for="plotmethod" style="font-size: 20px;">{{ _('Analysis Method') }}:</label>
+    <select class="form-control" v-model="selectedMethod" @change="handleMethodChange">
+      <!-- 繪圖方法選項 -->
+      <optgroup label="{{ _('Visualization') }}">
+        <option value="bar">{{ _('Bar') }}</option>
+	<option value="box">{{ _('Box') }}</option>
+	<!-- <option value="calendar_heatmap">{{ _('Calendar Heatmap') }}</option> -->
+	<option value="heatmap">{{ _('HeatMap') }}</option>
+	<option value="histogram">{{ _('Histogram') }}</option>
+	<option value="line" selected>{{ _('Line') }}</option>
+	<option value="scatter">{{ _('Scatter') }}</option>
+      </optgroup>
+      <!-- 其他分析方法選項 -->
+      <optgroup label="{{ _('Advanced Methods') }}"> <!-- Deep Methods -->
+        <option value="add_new">Add New</option>
+        <!-- Add New 選項 -->
+	<option value="cluster">{{ _('Cluster') }}</option>
+	<option value="correlation_matrix">{{ _('Correlation Matrix') }}</option>
+	<option value="outlier">{{ _('Outlier') }}</option>
+	<option value="stl">{{ _('STL Decomposition') }}</option>
+        <!-- 使用 Jinja2 預先渲染 `datatalk_methods` -->
+        {% for method in datatalk_methods %}
+          {% set datatalk_data = method[3] %}
+          <option value="datatalk-{{ datatalk_data.id }}" 
+                  data-user="{{ method[1] }}" 
+                  data-data='{{ datatalk_data | tojson | safe }}'>
+            {{ method[2] }}
+          </option>
+        {% endfor %}
+      </optgroup>
+    </select>
+  </div>
+  
+  <div class="col-sm-1 col-xs-4">
+    <br>
+    <br>
+    <br>
+    <button class="btn btn-primary" type="button" onclick="download();" style="width: 100%;">{{ _('Download') }}</button>
+  </div>
+  
+  <button onclick="openLoginPopup()">登入 DataTalk</button>
+  
+  <button @click="sendRequestToAITalk()">發送請求到 AI Talk</button>
+
+  
+  <!-- 動態顯示輸入框，僅當選擇 outlier 方法時才顯示 -->
+  <div class="col-sm-4 col-xs-12" v-if="selectedMethod === 'outlier'">
+    <br>
+    <label for="zscore-input" style="font-size: 20px;">{{ _('Z-Score threshold') }}:</label>
+    <div class="input-group">
+      <input id="zscore-input" type="number" v-model="zscoreThreshold" step="0.1" min="0" max="5">
+    </div>
+  </div>
+  
+  <!-- interactive chart -->
+  <div class="col-xs-12">
+    <br>
+    <div class="box box-primary">
+      <div class="box-header with-border">
+        <i class="fa fa-bar-chart-o"></i>
+        <h3 class="box-title" style="font-size: 20px;">{{ _('History Histogram') }}</h3>
+        <div class="box-tools pull-right"></div>
+      </div>
+      <div class="box-body">
+        <div id="interactive" style="height: 500px;"></div>
+      </div>
+    </div>  
+  </div>
+  
+  <!--<div id="iframeContainer"></div> -->
+
+  
+  <!-- 在 AJAX 請求中添加 CSRF token -->
+  <meta name="csrf-token" content="{{ csrf_token() }}"> 
+</div>
+
+<script id="datatalkMethods" type="application/json">
+    {{ datatalk_methods | tojson | safe if datatalk_methods else '[]' }}
+</script>
+
+{% endblock %}
+
+
+{% block page_script %}
+<!-- Page script -->
+<script>
+  function getData(callback) {
+    let fields = app.fieldsSensors.map(item => item.active_field);
+    let sensors = app.fieldsSensors.map(item => item.active_sensor);
+    let starttime = $('#start-time')[0].value;
+    let endtime = $('#end-time')[0].value + " 23:59:59";
+    let interval = $('#interval').val();
+
+    $.ajax({
+      'url': '/api/dynamic_datas',
+      'data': {
+        f: fields,
+        s: sensors,
+        st: starttime,
+        et: endtime,
+        i: interval
+      },
+      'traditional': true
+    }).done((data) => {
+      callback(data);
+    }).fail(() => {
+      callback();
+    });
+  }
+
+
+  function update() {
+    getData((data) => {
+      if (!data) { // 如果數據為空則返回，不進行繪圖
+        return;
+      }
+
+      let interval = $('#interval').val();
+      let plotmethod = $('#plotmethod').val();
+      let traces = [];         // 用來存儲所有的 traces
+
+      // 根據interval取資料，並且準備trace資料
+      for (let sensor in data) {
+        for (let field in data[sensor]) {
+          let sensorData = data[sensor][field];
+          let timestamps = [];
+          if (interval === 'day') {
+            timestamps = sensorData.map(item => `${item.date}`);
+          } else if (interval === 'hour') {
+            timestamps = sensorData.map(item => `${item.date} ${item.hour}:00:00`);
+          } else if (interval === 'minute') {
+            timestamps = sensorData.map(item => `${item.date} ${item.hour}:${item.minute}:00`);
+          } else {
+            timestamps = sensorData.map(item => item.timestamp); // 完整的時間戳
+          }
+          let values = sensorData.map(item => parseFloat(item.value));
+          // 準備 trace 資料
+          traces.push({
+            timestamps: timestamps,
+            values: values,
+            field: field,
+            sensor: sensor
+          });
+        }
+      }
+
+      // 將預處理後的資料發送到後端，並進行一次 AJAX 請求
+      $.ajax({
+        url: '/api/plotly',
+	type: 'POST',
+        contentType: 'application/json',
+        headers: {
+	  'X-CSRFToken': $('meta[name="csrf-token"]').attr('content')  // 加入 CSRF token
+	},
+	data: JSON.stringify({
+          traces: traces,  // 發送所有的 traces
+	  plotmethod: plotmethod
+	}),
+	success: function(response) {
+	  console.log("Response:", response);
+	  // 從 response 中提取 traces 和 layout 進行繪圖
+	  Plotly.newPlot('interactive', response.traces, response.layout, {responsive: true}).then(() => { // 顯示後端返回的圖表
+	    document.getElementById('interactive').style.height = '100%'; // 當圖表繪製完成後，將高度設置為 100%
+          });
+        },
+	error: function(error) {
+	  console.error("Error generating plot: ", error);
+	}
+      });
+    });
+  }
+  
+  
+  function getTraces(selectedMethod, callback) {
+    getData((data) => {
+      if (!data) { // 如果數據為空則返回，不進行繪圖
+        return;
+      }
+
+      let interval = $('#interval').val();
+      let traces = [];         // 用來存儲所有的 traces
+
+      // 根據interval取資料，並且準備trace資料
+      for (let sensor in data) {
+        for (let field in data[sensor]) {
+          let sensorData = data[sensor][field];
+          let timestamps = [];
+          if (interval === 'day') {
+            timestamps = sensorData.map(item => `${item.date}`);
+          } else if (interval === 'hour') {
+            timestamps = sensorData.map(item => `${item.date} ${item.hour}:00:00`);
+          } else if (interval === 'minute') {
+            timestamps = sensorData.map(item => `${item.date} ${item.hour}:${item.minute}:00`);
+          } else {
+            timestamps = sensorData.map(item => item.timestamp); // 完整的時間戳
+          }
+          let values = sensorData.map(item => parseFloat(item.value));
+          // 準備 trace 資料
+          traces.push({
+            timestamps: timestamps,
+            values: values,
+            field: field,
+            sensor: sensor
+          });
+        }
+      }  
+      // 回調以處理 traces
+      callback(traces, selectedMethod);
+    });
+  }
+
+  function visualization(traces, plotmethod){
+    $.ajax({
+      url: '/api/plotly',
+      type: 'POST',
+      contentType: 'application/json',
+        headers: {
+	  'X-CSRFToken': $('meta[name="csrf-token"]').attr('content')  // 加入 CSRF token
+	},
+      data: JSON.stringify({
+        traces: traces,  // 發送所有的 traces
+	plotmethod: plotmethod
+      }),
+      success: function(response) {
+        console.log("Response:", response);
+	// 從 response 中提取 traces 和 layout 進行繪圖
+	Plotly.newPlot('interactive', response.traces, response.layout, {responsive: true}).then(() => { // 顯示後端返回的圖表
+	  document.getElementById('interactive').style.height = '100%'; // 當圖表繪製完成後，將高度設置為 100%
+        });
+      },
+      error: function(error) {
+        console.error("Error generating plot: ", error);
+      }
+    });
+  }
+
+  
+  function stl(traces) {
+    // 當欄位有一個以上時，只處理第一組欄位 (trace)
+    let field1 = app.fieldsSensors[0].active_field; // 因為stl跟zscore只會處理一個欄位的資料，當使用者有很多欄位時，處理的資料集會是Field1+sensor1，也就是第一個欄位
+    let sensor1 = app.fieldsSensors[0].active_sensor;
+    let active_trace = traces.find(item => item.field === field1 && item.sensor === sensor1);
+    const x = active_trace.timestamps;
+    const y = active_trace.values;
+    
+    // 發送數據到後端 API 進行 STL 分解
+    $.ajax({
+      'url': '/api/stl_decomposition',
+      type: 'POST',
+      contentType: 'application/json',
+      headers: {
+        'X-CSRFToken': $('meta[name="csrf-token"]').attr('content')  // 加入 CSRF token
+      },
+      data: JSON.stringify({ x: x, y: y }),
+      success: function(stl_components) {
+        // 獲取後端傳回的圖表 JSON
+        const graph_json = stl_components.graph;
+        // 更新 STL chart，這裡正確解析 graph_json
+        Plotly.newPlot('interactive', JSON.parse(graph_json), {responsive: true}).then(() => {
+          document.getElementById('interactive').style.height = '100%'; // 當圖表繪製完成後，將高度設置為 100%
+        });
+      },
+      error: function(xhr, status, error) {
+        console.error('Error in STL decomposition:', error);
+      }
+    });    
+  }
+  
+  
+  function correlation_matrix(traces) {  
+    console.log(traces);    
+    // 發送數據到後端 API 進行 STL 分解
+    $.ajax({
+      url: '/api/correlation_matrix',
+      type: 'POST',
+      contentType: 'application/json',
+        headers: {
+	  'X-CSRFToken': $('meta[name="csrf-token"]').attr('content')  // 加入 CSRF token
+	},
+      data: JSON.stringify({
+        traces: traces  // 發送所有的 traces
+      }),
+      success: function(response) {
+        console.log("Response:", response);
+	const fig = JSON.parse(response.fig);
+	
+	// 使用 Plotly 渲染圖表
+	Plotly.newPlot('interactive', fig.data, fig.layout, {responsive: true}).then(() => {
+          document.getElementById('interactive').style.height = '100%';
+        });
+      },
+      error: function(error) {
+        console.error("Error generating plot: ", error);
+      }
+    }); 
+  }
+  
+
+  // 創建離群值標記線條
+  function createOutlierLines(trace, outlierIndices) {
+    return outlierIndices.map(index => ({
+      type: 'line',
+      x0: trace.timestamps[index],
+      x1: trace.timestamps[index],
+      y0: 0, // Math.min(...trace.values),
+      y1: Math.max(...trace.values),
+      line: {
+        color: 'red',
+        width: 2,
+        dash: 'dot'
+      }
+    }));
+  }
+
+
+  // 更新離群值圖表
+  function updateOutlierChart(gd, trace, zscoreThreshold) {
+    // 發送時間序列資料和 zscore 閾值到後端
+    $.ajax({
+      url: '/api/outlier_detection',
+      type: 'POST',
+      contentType: 'application/json',
+      headers: {
+        'X-CSRFToken': $('meta[name="csrf-token"]').attr('content')  // 加入 CSRF token
+      },
+      data: JSON.stringify({ timestamps: trace.timestamps, values: trace.values, zscoreThreshold: zscoreThreshold }),
+      success: function(response) {
+        const outlierLines = createOutlierLines(trace, response.outlierIndices);
+        // 更新 layout 中的 shapes (離群值標記線)
+        Plotly.relayout(gd, { shapes: outlierLines });
+      },
+      error: function(xhr, status, error) {
+        console.error('Error in outlier detection:', error);
+      }
+    });
+  }
+  
+  
+  // 初始繪製圖表的函數
+  function outlier(traces, initialZscoreThreshold = 3) {
+    traces.forEach(trace => {
+      let areaTrace = {
+        x: trace.timestamps,
+        y: trace.values,
+        mode: 'lines',
+        fill: 'tozeroy',
+        name: trace.field + ' - ' + trace.sensor
+      };
+
+      let layout = {
+        title: 'Area Chart with Outliers',
+        xaxis: { title: 'Time', tickformat: '%Y-%m-%d %H:%M:%S', tickangle: 45 },
+        yaxis: { title: 'Value' }
+      };
+
+      // 渲染圖表
+      Plotly.newPlot('interactive', [areaTrace], layout, {responsive: true}).then((gd) => {
+        // 當輸入框的值改變時，更新離群值
+        document.getElementById('zscore-input').addEventListener('input', (event) => {
+          let zscoreThreshold = parseFloat(event.target.value);
+          updateOutlierChart(gd, trace, zscoreThreshold);
+        });
+
+        // 初次渲染時也觸發一次 update
+        updateOutlierChart(gd, trace, initialZscoreThreshold);
+      });
+    });
+  }
+  
+  
+  // KMeans分群
+function cluster(traces, numClusters = 3) {
+    let scatterTraces = []; // 存放每個分群結果
+
+    traces.forEach(trace => {
+        // 呼叫後端 API 獲取分群結果，改用 AJAX
+        $.ajax({
+            url: '/api/cluster',
+            type: 'POST',
+            contentType: 'application/json',
+            headers: {
+                'X-CSRFToken': $('meta[name="csrf-token"]').attr('content') // 加入 CSRF token
+            },
+            data: JSON.stringify({
+                timestamps: trace.timestamps,
+                values: trace.values,
+                numClusters: numClusters
+            }),
+            success: function(data) {
+                let pcaData = data.pcaData; // 從後端獲取 PCA 資料
+                let clusterLabels = data.clusterLabels; // 從後端獲取分群標籤
+
+                // 數據準備，用於展示
+                scatterTraces.push({
+                    x: pcaData.map(item => item[0]), // PCA 第一主成分
+                    y: pcaData.map(item => item[1]), // PCA 第二主成分
+                    mode: 'markers',
+                    marker: {
+                        color: clusterLabels,
+                        colorscale: 'Viridis',
+                        size: 8
+                    },
+                    text: trace.values.map((value, idx) => `${trace.field} - ${trace.sensor}<br>Value: ${value}`),
+                    hoverinfo: 'text'
+                });
+
+                // 渲染圖表
+                if (scatterTraces.length === traces.length) {
+                    Plotly.newPlot('interactive', scatterTraces, {
+                        title: 'KMeans Clustering with PCA',
+                        xaxis: { title: 'PCA Component 1' },
+                        yaxis: { title: 'PCA Component 2' },
+                        showlegend: false
+                    });
+                }
+            },
+            error: function(xhr, status, error) {
+                console.error('Error in KMeans clustering:', error);
+            }
+        });
+    });
+}
+
+
+function download() {
+  getTraces(null, (traces) => {
+    if (!traces || traces.length === 0) {
+      alert('No data available for download.');
+      return;
+    }
+
+    // Prepare CSV header
+    let csvContent = 'timestamps,' + traces.map(trace => `${trace.field}-${trace.sensor}`).join(',') + '\n';
+
+    // Collect unique timestamps // 使用 Set 收集所有 trace 的唯一時間戳，避免重複。
+    let allTimestamps = new Set();
+    traces.forEach(trace => {
+      trace.timestamps.forEach(timestamp => allTimestamps.add(timestamp));
+    });
+
+    // Sort timestamps // 將 Set 轉換為陣列，並根據時間順序對時間戳進行排序。
+    let sortedTimestamps = Array.from(allTimestamps).sort((a, b) => new Date(a) - new Date(b));
+
+    // Prepare rows of data
+    sortedTimestamps.forEach(timestamp => { // 為每個時間戳準備一行數據
+      let row = [timestamp];
+      traces.forEach(trace => { // 檢查每個 trace 是否包含該時間戳
+        let index = trace.timestamps.indexOf(timestamp); // 如果找到對應索引，插入該時間戳對應的 value
+        row.push(index !== -1 ? trace.values[index] : 'NaN'); // 如果未找到，則補上 NaN 作為缺失值
+      });
+      csvContent += row.join(',') + '\n'; // 將這一行數據以逗號分隔，並追加到 csvContent 中
+    });
+
+    // Create a blob and download the file
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'traces_data.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  });
+}
+
+
+  function addNewDatatalk() {
+    let user = prompt("請輸入使用者名稱:");
+    let name = prompt("請輸入方法名稱:");
+    if (user && name) {
+      sendRequestToAITalk(user, name);
+    }
+  }
+
+function sendRequestToAITalk(user, name) {
+    return new Promise((resolve, reject) => {
+        console.log(`📡 發送請求到 /api/proxy，user: ${user}, name: ${name}`);
+
+        fetch('/api/proxy', {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': $('meta[name="csrf-token"]').attr('content')
+            },
+            body: JSON.stringify({ user: user, name: name })
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! Status: ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log("✅ AITalk 回應:", data);
+
+            return fetch('/api/save_datatalk_method', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': $('meta[name="csrf-token"]').attr('content')
+                },
+                body: JSON.stringify({
+                    user: user,
+                    name: name,
+                    datatalk_data: data
+                })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`Flask API 錯誤: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then((savedData) => {
+                alert(`✅ 已成功新增 DataTalk 方法：${name}`);
+
+                // ✅ **更新 Vue 的 `dataTalkMethods`**
+                app.dataTalkMethods.push({
+                    id: savedData.id,
+                    name: name,
+                    user: user,
+                    datatalk_data: JSON.stringify(data)
+                });
+
+                // ✅ **更新 HTML 選單**
+                let select = document.querySelector(".form-control");
+                let option = document.createElement("option");
+                option.value = `datatalk-${savedData.id}`;
+                option.textContent = `${name}`;
+                option.setAttribute("data-user", user);
+                option.setAttribute("data-data", JSON.stringify(data));
+                select.appendChild(option);
+
+                resolve(savedData);
+            });
+        })
+        .catch(error => {
+            console.error("❌ 發生錯誤:", error);
+            alert(error.message || "請求失敗");
+            reject(null);
+        });
+    });
+}
+
+
+
+
+
+  function getFormatDate(date) {
+    let year = date.getFullYear();
+    let month = '' + (date.getMonth() + 1);
+    let day = '' + date.getDate();
+
+    if (month.length < 2) month = '0' + month;
+    if (day.length < 2) day = '0' + day;
+
+    return [year, month, day].join('-');
+  }
+  
+  var app = new Vue({
+    el: '#app',
+    data: function () {
+      let initialFieldsSensors = {
+        active_field: '',
+        active_sensor: '',
+        active_sensors: []
+      };
+      return {
+        fields: {{ fields|safe }}, //Jinja2 模板語言中的語法，用來在 HTML 模板中插入變數或表達式的值。當模板被渲染時，變數的值會替換掉
+        fieldsSensors: [Object.assign({}, initialFieldsSensors)],
+        selectedMethod: 'line',  // 預設選擇的繪圖方法
+        datatalkMethods:[], // 使用者所新增的分析方法
+        iframeUrl: '' // iframe 連結
+      };
+    },
+    methods: {
+      addFieldSensor() {
+        this.fieldsSensors.push({
+          active_field: '',
+          active_sensor: '',
+          active_sensors: []
+        });
+      },
+      field_change(index) {
+        let field = this.fieldsSensors[index].active_field;
+        this.fieldsSensors[index].active_sensors = this.fields.find(f => f.name === field).sensors;
+      },
+      executeMethod() {
+        if (this.selectedMethod === 'outlier') {
+          let zscoreThreshold = 3;
+          getTraces('area', (traces) => {
+            outlier(traces, zscoreThreshold);
+          });
+        } else if (this.selectedMethod === 'stl') {
+            getTraces(this.selectedMethod, stl);
+        } else if (this.selectedMethod === 'correlation_matrix') {
+            getTraces(this.selectedMethod, correlation_matrix);
+        } else if (this.selectedMethod === 'cluster') {
+            let numClusters = 3;
+            getTraces('scatter', (traces) => {
+              cluster(traces, numClusters);
+            });
+        } else {
+          // 調用外部的 getTraces 函數，並將選擇的繪圖方法和回調傳入
+          getTraces(this.selectedMethod, visualization);  // `plot` 作為回調函數
+        }
+      },
+      updateIframeUrl() {
+        let selected = this.customMethods.find(method => method.id === this.selectedMethod);
+        if (selected) {
+          this.iframeUrl = selected.url;
+        } else {
+          this.iframeUrl = '';
+        }
+        this.$nextTick(() => {
+          let interactiveDiv = document.getElementById('interactive');
+          if (this.iframeUrl) {
+            interactiveDiv.innerHTML = `<iframe src="${this.iframeUrl}" style="width:100%; height:600px; border:none;"></iframe>`;
+          } else {
+            interactiveDiv.innerHTML = '';
+          }
+        });
+      },      
+      // 處理選單變更
+      handleMethodChange() {
+        console.log("🔍 當前選擇的方法:", this.selectedMethod);
+        if (this.selectedMethod === "add_new") {
+          addNewDatatalk();
+        } else if (!Array.isArray(this.dataTalkMethods)) {
+            console.error("❌ dataTalkMethods 未初始化");
+            alert("DataTalk 方法尚未載入，請重新整理頁面！");
+        } else if (this.selectedMethod && this.selectedMethod.startsWith("datatalk-")) {
+            this.loadCustomMethod();
+        } else {
+            this.executeMethod(); // ✅ 選擇內建分析方法時執行對應邏輯
+        }
+      },
+      loadCustomMethod() {
+
+        let methodId = this.selectedMethod.replace("datatalk-", "");
+        console.log("🔍 嘗試載入 DataTalk ID:", methodId);
+
+        let selectedMethod = this.dataTalkMethods.find(method => method[3].id == methodId);
+    
+        if (!selectedMethod) {
+          console.error("❌ 找不到對應的 DataTalk 方法:", methodId);
+          return;
+        }
+
+        console.log("✅ 找到對應 DataTalk 方法:", selectedMethod);
+
+        this.iframeUrl = `https://aitalk.danny.iottalk.tw/datatalk#/${methodId}/dataset-mgmt`;
+
+        this.$nextTick(() => {
+          let interactiveDiv = document.getElementById("interactive");
+          interactiveDiv.innerHTML = `<iframe src="${this.iframeUrl}" style="width:100%; height:600px; border:none;"></iframe>`;
+        });
+      }
+    },
+    mounted() {
+      this.fieldsSensors[0].active_field = this.fields[0].name;
+      this.fieldsSensors[0].active_sensors = this.fields[0].sensors;
+      this.fieldsSensors[0].active_sensor = this.fields[0].sensors[0].df_name;
+      this.dataTalkMethods = JSON.parse(document.getElementById('datatalkMethods').textContent);
+
+      // set default time
+      let d = new Date();
+      $('#end-time')[0].value = getFormatDate(d);
+      d.setDate(d.getDate() - 1);
+      $('#start-time')[0].value = getFormatDate(d);
+      
+      let datatalkElement = document.getElementById('datatalkMethods');
+      if (datatalkElement) {
+        try {
+            let dataText = datatalkElement.textContent.trim();
+            this.dataTalkMethods = dataText ? JSON.parse(dataText) : [];
+            console.log("✅ 成功載入 DataTalk 方法:", this.dataTalkMethods);
+        } catch (error) {
+            console.error("❌ JSON 解析錯誤:", error);
+            this.dataTalkMethods = [];
+        }
+      } else {
+        console.warn("⚠️ `datatalkMethods` script 未找到");
+        this.dataTalkMethods = [];
+      }
+    }
+  });
+  
+    // 開啟登入 Popup 視窗
+    function openLoginPopup() {
+        const loginWindow = window.open(
+            'https://aitalk.danny.iottalk.tw/datatalk',
+            'DataTalkLogin',
+            'width=800,height=600'
+        );
+
+        // 監聽子視窗傳回的登入訊息
+        window.addEventListener('message', function(event) {
+            // 驗證來源
+            if (event.origin !== 'https://aitalk.danny.iottalk.tw') return;
+
+            const data = event.data;
+            if (data.status === 'success') {
+                document.getElementById('login-status').innerText = `登入成功，使用者：${data.username}`;
+            } else {
+                document.getElementById('login-status').innerText = '登入失敗';
+            }
+        }, false);
+    }
+</script>
+{% endblock %}
+

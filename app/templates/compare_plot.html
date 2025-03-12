@@ -1,6 +1,6 @@
 {% extends 'base/base.html' %} 
 
-{% block page_title %} {{ _('Data Download') }} {% endblock %}
+{% block page_title %} {{ _('Data Compare') }} {% endblock %}
 
 {% block page_content %}
 <div class="row" id="app">
@@ -79,10 +79,10 @@
   </div>
   <div class="col-sm-12 col-xs-12">
     <br>
-    <input type="button" onclick="download_field1();" value="{{ _('Download')}}" />
     <input type="button" onclick="update();" value="{{ _('Plot') }}" />
-    <!-- <input type="button" onclick="download_field1();" value="{{ _('Field') }}1 {{ _('Download')}}" />
-    <input type="button" onclick="download_field2();" value="{{ _('Field') }}2 {{ _('Download')}}" /> -->
+    <input type="button" onclick="download_field1();" value="{{ _('Field') }}1 {{ _('Download')}}" />
+    <input type="button" onclick="download_field2();" value="{{ _('Field') }}2 {{ _('Download')}}" />
+    <input type="button" onclick="update();" value="{{ _('Plotly') }}" />
   </div>
   <div class="col-xs-12">
     <!-- interactive chart -->
@@ -200,7 +200,9 @@
  
       let dataset = [];
       let yaxes = [];
-      let sensors = Object.keys(data); //sensors = ['AtPressure-O']
+      let sensors = Object.keys(data);
+      console.log(data);
+      console.log(sensors);
       if (!sensors.length) { return; }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -248,7 +250,6 @@
       let x_tick = [];
 //      let tick_interval = Math.ceil(data[sensor1][field1].length / 7);
       let tick_interval = Math.ceil(data[target1[1]][target1[0]].length / 7);
-      console.log('tick_interval: ',tick_interval);
       
 //      data1 = data[sensor1][field1];
       data1 = data[target1[1]][target1[0]];
@@ -264,7 +265,6 @@
           min1 = value;
         }
         res1.push([idx, value]);
-        console.log('res1: ',res1);
         if (idx % tick_interval == 0) {
           if (element.minute) {
             x_tick.push([idx, element.date + ' ' + element.hour + ':' + element.minute +':00']);
@@ -458,15 +458,12 @@
     $('#interactive').UseTooltip();
 
     // set Vue data
-    apps = new Vue({
-      el: '#app',
-      data: function () {
+    apps = new Vue({ //建立一個新的vue
+      el: '#app', //此vue控制的html id為"app"，也就是說此vue將會操控擁有id="app"的html元素
+      data: function () { //定義了該Vue實例的資料屬性，包括fields、active_field1、active_sensor1、active_field2和active_sensor2
         fields = {{ fields|safe }}.filter((data)=>{return data.sensors.length});
-        console.log(fields);
         active_field1 = fields[0].name;
-        console.log(active_field1);
         active_sensor1 = fields[0]['sensors'];
-        console.log(active_sensor1);
         return {
           fields: fields,
           active_field1: active_field1,
@@ -475,7 +472,7 @@
           active_sensor2: []
         }
       },
-      methods: {
+      methods: { //定義了該 Vue 實例的方法，包括 field1_change 和 field2_change
         field1_change(e) {
           this.active_sensor1 = [];
           this.fields.forEach((field) => {

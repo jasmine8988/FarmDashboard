@@ -1,110 +1,13 @@
 {% extends 'base/base.html' %} 
 
-{% block page_title %} {{ _('Data Download') }} {% endblock %}
+{% block page_title %} {{ _('Data Visualization') }} {% endblock %}
 
 {% block page_content %}
 <div class="row" id="app">
-  <!-- field 1 -->
-  <div class="col-sm-6 col-xs-12">
-    <label for="field1">{{ _('Field') }}1:</label>
-    <select class="form-control" id="field1" v-model="active_field1" @change="field1_change">
-      <template v-for="field in fields">
-        <option :value="field.name">{{ '{{' }}field.alias{{ '}}' }}</option>
-      </template>
-    </select>
-  </div>
-
-  <!-- sensor1 -->
-  <div class="col-sm-6 col-xs-12">
-    <label for="sensor1">{{ _('Sensor') }}1: </label>
-    <select class="form-control" id="sensor1">
-      <template v-for="sensor in active_sensor1">
-        <option :value="sensor.df_name">{{ '{{' }}sensor.alias{{ '}}' }}</option>
-      </template>
-    </select>
-  </div>
-
-  <!-- field 2 -->
-  <div class="col-sm-6 col-xs-12">
-    <label for="field2">{{ _('Field') }}2: </label>
-    <select class="form-control" id="field2" v-model="active_field2" @change="field2_change">
-      <option value="">{{ _('None') }}</option>
-      <template v-for="field in fields">
-        <option :value="field.name">{{ '{{' }}field.alias{{ '}}' }}</option>
-      </template>
-    </select>
-  </div>
-
-  <!-- sensor2 -->
-  <div class="col-sm-6 col-xs-12">
-    <label for="sensor2">{{ _('Sensor') }}2: </label>
-    <select class="form-control" id="sensor2">
-      <template v-for="sensor in active_sensor2">
-        <option :value="sensor.df_name">{{ '{{' }}sensor.alias{{ '}}' }}</option>
-      </template>
-    </select>
-  </div>
-
-  <!-- start time -->
-  <div class="col-sm-4 col-xs-12">
-    <label for="start-time">{{ _('StartTime') }}: </label>
-    <div class="input-group date">
-      <div class="input-group-addon">
-        <i class="fa fa-calendar"></i>
-      </div>
-      <input class="form-control" type='date' id="start-time" />
-    </div>
-  </div>
-
-  <!-- end time -->
-  <div class="col-sm-4 col-xs-12">
-    <label for="end-time">{{ _('EndTime') }}: </label>
-    <div class="input-group date">
-      <div class="input-group-addon">
-        <i class="fa fa-calendar"></i>
-      </div>
-      <input class="form-control" type='date' id="end-time" />
-    </div>
-  </div>
-
-  <!-- interval -->
-  <div class="col-sm-4 col-xs-12">
-    <label for="interval">{{ _('Interval') }}:</label>
-    <select class="form-control" id="interval">
-      <option value="second">{{ _('Second') }}</option>
-      <option value="minute">{{ _('Minute') }}</option>
-      <option value="hour" selected>{{ _('Hour') }}</option>
-      <option value="day">{{ _('Day') }}</option>
-    </select>
-  </div>
   <div class="col-sm-12 col-xs-12">
     <br>
-    <input type="button" onclick="download_field1();" value="{{ _('Download')}}" />
-    <input type="button" onclick="update();" value="{{ _('Plot') }}" />
-    <!-- <input type="button" onclick="download_field1();" value="{{ _('Field') }}1 {{ _('Download')}}" />
-    <input type="button" onclick="download_field2();" value="{{ _('Field') }}2 {{ _('Download')}}" /> -->
-  </div>
-  <div class="col-xs-12">
-    <!-- interactive chart -->
+    <input type="file" name="csvFile" accept=".csv">
     <br>
-    <div class="box box-primary">
-      <div class="box-header with-border">
-        <i class="fa fa-bar-chart-o"></i>
-
-        <h3 class="box-title">{{ _('History Histogram') }}</h3>
-
-        <div class="box-tools pull-right">
-          <!--
-          Real time
-          <div class="btn-group" id="realtime" data-toggle="btn-toggle">
-            <button type="button" class="btn btn-default btn-xs active" data-toggle="on">On</button>
-            <button type="button" class="btn btn-default btn-xs" data-toggle="off">Off</button>
-          </div>
-          -->
-        </div>
-      </div>
-      <div class="box-body"><div id="interactive" style="height: 300px;"></div></div>
-    </div>
   </div>
 </div>
 {% endblock %}
@@ -152,6 +55,30 @@
       }
     });
   };
+  
+
+  function download_field1() {
+    download_field($('#field1').val(),
+                   $('#sensor1').val(),
+                   $('#start-time')[0].value,
+                   $('#end-time')[0].value,
+                   $('#interval').val());
+  }
+
+  function download_field2() {
+    download_field($('#field2').val(),
+                   $('#sensor2').val(),
+                   $('#start-time')[0].value,
+                   $('#end-time')[0].value,
+                   $('#interval').val());
+  }
+
+  function download_field(field, sensor, starttime, endtime, interval, limit) {
+    let a = document.createElement('a');;
+    a.href = '/api/export_datas?f=' + field + '&s=' + sensor + '&st=' + starttime + '&et=' + endtime + ' 23:59:59&i=' + interval;
+    a.download = field + '_' + sensor + '_' + starttime + '_' + endtime + '.csv';
+    a.click();
+  }
  
   function showTooltip(x, y, color, contents) {
     $('<div id="tooltip">' + contents + '</div>').css({
@@ -200,7 +127,7 @@
  
       let dataset = [];
       let yaxes = [];
-      let sensors = Object.keys(data); //sensors = ['AtPressure-O']
+      let sensors = Object.keys(data);
       if (!sensors.length) { return; }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -248,7 +175,6 @@
       let x_tick = [];
 //      let tick_interval = Math.ceil(data[sensor1][field1].length / 7);
       let tick_interval = Math.ceil(data[target1[1]][target1[0]].length / 7);
-      console.log('tick_interval: ',tick_interval);
       
 //      data1 = data[sensor1][field1];
       data1 = data[target1[1]][target1[0]];
@@ -264,7 +190,6 @@
           min1 = value;
         }
         res1.push([idx, value]);
-        console.log('res1: ',res1);
         if (idx % tick_interval == 0) {
           if (element.minute) {
             x_tick.push([idx, element.date + ' ' + element.hour + ':' + element.minute +':00']);
@@ -409,28 +334,6 @@
     });
   }
 
-  function download_field1() {
-    download_field($('#field1').val(),
-                   $('#sensor1').val(),
-                   $('#start-time')[0].value,
-                   $('#end-time')[0].value,
-                   $('#interval').val());
-  }
-
-  function download_field2() {
-    download_field($('#field2').val(),
-                   $('#sensor2').val(),
-                   $('#start-time')[0].value,
-                   $('#end-time')[0].value,
-                   $('#interval').val());
-  }
-
-  function download_field(field, sensor, starttime, endtime, interval, limit) {
-    let a = document.createElement('a');;
-    a.href = '/api/export_datas?f=' + field + '&s=' + sensor + '&st=' + starttime + '&et=' + endtime + ' 23:59:59&i=' + interval;
-    a.download = field + '_' + sensor + '_' + starttime + '_' + endtime + '.csv';
-    a.click();
-  }
 
   function getFormatDate(date) {
     let year = date.getFullYear();
@@ -462,11 +365,8 @@
       el: '#app',
       data: function () {
         fields = {{ fields|safe }}.filter((data)=>{return data.sensors.length});
-        console.log(fields);
         active_field1 = fields[0].name;
-        console.log(active_field1);
         active_sensor1 = fields[0]['sensors'];
-        console.log(active_sensor1);
         return {
           fields: fields,
           active_field1: active_field1,

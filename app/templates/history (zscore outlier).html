@@ -1,0 +1,289 @@
+{% extends 'base/base.html' %} 
+
+{% block page_title %} {{ _('Latest 24 hours data history') }} {% endblock %}
+
+{% block page_content %}
+<div class="row" id="app">
+  <div class="col-sm-4 col-xs-12">
+    <label for="filed">{{ _('Field') }}</label>
+    <select class="form-control" id="field" v-model="active_field" @change="field_change">
+      <template v-for="field in fields">
+        <option :value="field.name" >{{ '{{' }}field.alias{{ '}}' }}</option>
+      </template>
+    </select>
+  </div>
+
+  <div class="col-sm-4 col-xs-12">
+    <label for="sensor">{{ _('Sensor') }}</label>
+    <select class="form-control" id="sensor" v-model="active_sensor">
+      <template v-for="sensor in active_sensors">
+        <option :value="sensor.df_name">{{ '{{' }}sensor.alias{{ '}}' }}</option>
+      </template>
+    </select>
+  </div>
+
+  <div class="col-sm-4 col-xs-12">
+    <label for="range">{{ _('Time Slot') }}</label>
+    <select class="form-control" id="interval">
+      <option value="10080">1{{ _(' Week') }}</option>
+      <option value="1440">24{{ _(' Hours') }}</option>
+      <option value="60">1{{ _(' Hour') }}</option>
+      <option value="10">10{{ _(' Minutes') }}</option>
+    </select>
+  </div>
+    
+  <!-- interactive chart -->
+  <div class="col-xs-12">
+    <br>
+    <div class="box box-primary">
+      <div class="box-header with-border">
+        <i class="fa fa-bar-chart-o"></i>
+        <h3 class="box-title">{{ _('Data Chart') }}</h3>
+
+        <!--<div class="box-tools pull-right">
+          Real time
+          <div class="btn-group" id="realtime" data-toggle="btn-toggle">
+            <button type="button" class="btn btn-default btn-xs active" data-toggle="on">On</button>
+            <button type="button" class="btn btn-default btn-xs" data-toggle="off">Off</button>
+          </div>
+        </div>-->
+      </div>
+      <div class="box-body">
+        <div id="interactive" style="height: 300px;"></div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Outlier chart -->
+  <div class="col-sm-6">
+  <br>
+    <div id="outlier-chart"></div>
+  </div>
+
+  <!-- Outlier table -->
+  <div class="col-sm-6">
+  <br>
+  <h4>{{ _('Detected Outliers') }}</h4>
+  <table class="table table-bordered" id="outlier-table">
+    <thead>
+      <tr>
+        <th>{{ _('Time') }}</th>
+        <th>{{ _('Value') }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      <!-- 動態生成的表格內容將顯示在這裡 -->
+    </tbody>
+  </table>
+  </div>
+ 
+  <!-- STL chart -->
+  <div class="col-sm-12 col-xs-12">
+  <br>
+    <div id="STL-chart"></div>
+  </div>
+
+</div>
+
+{% endblock %}
+
+{% block page_script %}
+<!-- Page script -->
+<script>
+  function calculateZScores(data) {
+    // 計算z-score
+    const mean = data.reduce((acc, val) => acc + val, 0) / data.length;
+    const std = Math.sqrt(data.reduce((acc, val) => acc + Math.pow(val - mean, 2), 0) / data.length);
+    return data.map(val => (val - mean) / std);
+  }
+
+  function getDate(date) {
+    let year = date.getFullYear();
+    let month = '' + (date.getMonth() + 1);
+    let day = '' + date.getDate();
+
+    let hour = '' + date.getHours();
+    let minute = '' + date.getMinutes();
+    let second = '' + date.getSeconds();
+
+    if (month.length < 2) month = '0' + month;
+    if (day.length < 2) day = '0' + day;
+    if (hour.length < 2) hour = '0' + hour;
+    if (minute.length < 2) minute = '0' + minute;
+    if (second.length < 2) second = '0' + second;
+
+    return [year, month, day].join('-') + ' ' + [hour, minute, second].join(':');
+  }
+  
+  function getData(field, sensor, interval, callback) {
+    let d = new Date(); //d = Mon Oct 07 2024 18:02:48 GMT+0800 (Taipei Standard Time)
+    let et = getDate(d); //et = 2024-10-07 18:02:48
+    d.setMinutes(d.getMinutes() - Number(interval));
+    let st = getDate(d); //st = 2024-10-06 18:05:37
+    $.ajax({
+      'url': '/api/datas/' + field + '/' + sensor + '?limit=9999999&start=' + st + '&end=' + et + '&i=' + interval,
+    }).done((data) => {
+      if(callback && data && data[sensor]) {
+        callback(data[sensor].reverse());
+      } else {
+        callback([]);
+      }
+    }).fail(() => {
+      callback([]);
+    });
+  }
+
+function update() {
+  getData($('#field').val(), $('#sensor').val(), $('#interval').val(), (data) => {
+    let x = [];
+    let y = [];
+
+    data.forEach((element) => {
+      if (element && element[0] && element[1] !== undefined && !isNaN(element[1])) {
+        x.push(element[0]);  // 日期或時間
+        y.push(parseFloat(element[1]));  // 值
+      }
+    });
+
+    let zScores = calculateZScores(y);  // 計算z-score
+
+    const threshold = 3;
+    let outliers_x = [];
+    let outliers_y = [];
+
+    zScores.forEach((z, index) => {
+      if (Math.abs(z) > threshold) {
+        outliers_x.push(x[index]);
+        outliers_y.push(y[index]);
+      }
+    });
+
+    // 更新表格
+    const tableBody = document.querySelector('#outlier-table tbody');
+    tableBody.innerHTML = '';  // 清空之前的表格內容
+
+    if (outliers_x.length > 0 && outliers_y.length > 0) {  // 如果有離群值
+      outliers_x.forEach((time, index) => {
+        const row = document.createElement('tr');
+        const timeCell = document.createElement('td');
+        const valueCell = document.createElement('td');
+        
+        timeCell.textContent = time;
+        valueCell.textContent = outliers_y[index];
+        
+        row.appendChild(timeCell);
+        row.appendChild(valueCell);
+        tableBody.appendChild(row);
+      });
+    } else {
+      const row = document.createElement('tr');
+      const emptyCell = document.createElement('td');
+      emptyCell.setAttribute('colspan', '2');
+      emptyCell.textContent = '{{ _("No outliers detected") }}';
+      row.appendChild(emptyCell);
+      tableBody.appendChild(row);
+    }
+
+    // 更新圖表
+    var trace1 = {
+      x: x,
+      y: y,
+      mode: 'lines',
+      name: 'Data',
+      fill: 'tozeroy',
+      marker: { size: 8 }
+    };
+
+    var layout = {
+      title: 'Data Chart',
+      xaxis: { title: 'Time' },
+      yaxis: { title: 'Value' },
+      hovermode: 'closest'
+    };
+
+    var trace2 = {  // 定義 trace2，無論是否有離群值
+      x: outliers_x,
+      y: outliers_y,
+      mode: 'markers',
+      name: 'Outliers',
+      marker: {
+        color: 'red',
+        size: 10,
+        symbol: 'circle'
+      }
+    };
+
+    // 更新 interactive 圖表，根據是否有離群值決定顯示的 trace
+    let traces = [trace1];
+    if (outliers_x.length > 0 && outliers_y.length > 0) {
+      traces.push(trace2);
+    }
+    Plotly.newPlot('interactive', traces, layout);
+
+    // 更新 Outlier chart，無論是否有離群值都會更新
+    Plotly.newPlot('outlier-chart', outliers_x.length > 0 ? [trace2] : [], {
+      title: 'Outlier Chart',
+      xaxis: { title: 'Time' },
+      yaxis: { title: 'Outlier Value' },
+      hovermode: 'closest'
+    });
+  });
+}
+
+
+$(() => {
+  // 初始化 Plotly 圖表為空
+  Plotly.newPlot('interactive', [], {
+    title: 'Data Chart',
+    xaxis: { title: 'Time' },
+    yaxis: { title: 'Value' },
+  });
+
+  // set Vue data
+  apps = new Vue({
+    el: '#app',
+    data: function () {
+      fields = {{ fields|safe }}.filter((data) => { return data.sensors.length; });
+      active_field = fields[0].name;
+      active_sensors = fields[0]['sensors'];
+      active_sensor = fields[0]['sensors'][0]['df_name'];
+      return {
+        fields: fields,
+        active_field: active_field,
+        active_sensors: active_sensors,
+        active_sensor: active_sensor
+      };
+    },
+    methods: {
+      field_change(e) {
+        this.active_sensors = [];
+        this.fields.forEach((field) => {
+          if (field.name == e.target.value) {
+            this.active_sensors = field['sensors'];
+            this.active_sensor = this.active_sensors[0]['df_name'];
+          }
+        });
+      }
+    }
+  });
+  // 讓dashboard.html點了more info.後可以直接跳轉到history
+  let hash = window.location.hash.replace('#', '').split(',');
+  if(hash[0]){
+    apps.active_field = hash[0];
+    apps.fields.forEach((field) => {
+      if(field.name == hash[0]) {
+        apps.active_sensors = field['sensors'];
+        apps.active_sensor = this.active_sensors[0]['df_name'];
+      }
+    });
+  }
+  if(hash[1]){
+    apps.active_sensor = hash[1];
+  }
+
+  // 初始化圖表更新
+  update();
+  setInterval(update, 3000);  // 每秒更新一次
+});
+</script>
+{% endblock %}

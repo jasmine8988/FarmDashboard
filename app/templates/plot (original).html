@@ -1,0 +1,362 @@
+{% extends 'base/base.html' %} 
+
+{% block page_title %} {{ _('Data Visualization') }} {% endblock %}
+
+{% block page_content %}
+<div class="row" id="app">
+  <!-- number of datas -->
+  <div class="col-sm-12 col-xs-12">
+    <label for="field1">{{ _('Number of Sensors') }}:</label>
+    <select class="form-control" id="numberdatas">
+      <option value="second">{{ _('1') }}</option>
+      <option value="minute" selected>{{ _('2') }}</option>
+      <option value="hour">{{ _('3') }}</option>
+      <option value="day">{{ _('4') }}</option>
+    </select>
+  </div>
+  
+  <!-- field 1 -->
+  <div class="col-sm-6 col-xs-12">
+    <label for="field1">{{ _('Field') }}1:</label>
+    <select class="form-control" id="field1" v-model="active_field1" @change="field1_change">
+      <template v-for="field in fields">
+        <option :value="field.name">{{ '{{' }}field.alias{{ '}}' }}</option>
+      </template>
+    </select>
+  </div>
+
+  <!-- sensor1 -->
+  <div class="col-sm-6 col-xs-12">
+    <label for="sensor1">{{ _('Sensor') }}1: </label>
+    <select class="form-control" id="sensor1">
+      <template v-for="sensor in active_sensor1">
+        <option :value="sensor.df_name">{{ '{{' }}sensor.alias{{ '}}' }}</option>
+      </template>
+    </select>
+  </div>
+  
+  <!-- field 2 -->
+  <div class="col-sm-6 col-xs-12">
+    <label for="field2">{{ _('Field') }}2: </label>
+    <select class="form-control" id="field2" v-model="active_field2" @change="field2_change">
+      <option value="">{{ _('None') }}</option>
+      <template v-for="field in fields">
+        <option :value="field.name">{{ '{{' }}field.alias{{ '}}' }}</option>
+      </template>
+    </select>
+  </div>
+
+  <!-- sensor2 -->
+  <div class="col-sm-6 col-xs-12">
+    <label for="sensor2">{{ _('Sensor') }}2: </label>
+    <select class="form-control" id="sensor2">
+      <template v-for="sensor in active_sensor2">
+        <option :value="sensor.df_name">{{ '{{' }}sensor.alias{{ '}}' }}</option>
+      </template>
+    </select>
+  </div>
+  
+  <!-- start time -->
+  <div class="col-sm-3 col-xs-12">
+    <label for="start-time">{{ _('StartTime') }}: </label>
+    <div class="input-group date">
+      <div class="input-group-addon">
+        <i class="fa fa-calendar"></i>
+      </div>
+      <input class="form-control" type='date' id="start-time" />
+    </div>
+  </div>
+
+  <!-- end time -->
+  <div class="col-sm-3 col-xs-12">
+    <label for="end-time">{{ _('EndTime') }}: </label>
+    <div class="input-group date">
+      <div class="input-group-addon">
+        <i class="fa fa-calendar"></i>
+      </div>
+      <input class="form-control" type='date' id="end-time" />
+    </div>
+  </div>
+
+  <!-- interval -->
+  <div class="col-sm-3 col-xs-12">
+    <label for="interval">{{ _('Interval') }}:</label>
+    <select class="form-control" id="interval">
+      <option value="second">{{ _('Second') }}</option>
+      <option value="minute">{{ _('Minute') }}</option>
+      <option value="hour" selected>{{ _('Hour') }}</option>
+      <option value="day">{{ _('Day') }}</option>
+    </select>
+  </div>
+
+  <!-- plot method -->
+  <div class="col-sm-3 col-xs-12">
+    <label for="plotmethod">{{ _('Plot Method') }}:</label>
+    <select class="form-control" id="plotmethod">
+      <option value="line" selected>{{ _('Line') }}</option>
+      <option value="scatter">{{ _('Scatter') }}</option>
+      <option value="box">{{ _('Box') }}</option>
+      <option value="bar">{{ _('Bar') }}</option>
+      <option value="heatmap">{{ _('HeatMap') }}</option>
+    </select>
+  </div>
+  
+  <!-- plot button -->
+  <div class="col-sm-12 col-xs-12">
+    <br>
+    <input type="button" onclick="update();" value="{{ _('Plot') }}" />
+  </div>
+  
+  <div class="col-xs-12">
+    <!-- interactive chart -->
+    <br>
+    <div class="box box-primary">
+      <div class="box-header with-border">
+        <i class="fa fa-bar-chart-o"></i>
+
+        <h3 class="box-title">{{ _('History Histogram') }}</h3>
+
+        <div class="box-tools pull-right">
+          <!--
+          Real time
+          <div class="btn-group" id="realtime" data-toggle="btn-toggle">
+            <button type="button" class="btn btn-default btn-xs active" data-toggle="on">On</button>
+            <button type="button" class="btn btn-default btn-xs" data-toggle="off">Off</button>
+          </div>
+          -->
+        </div>
+      </div>
+      <div class="box-body"><div id="plot" style="height: 500px;"></div></div>
+    </div>
+  </div>  
+</div>
+
+<!-- plot 
+    <div class="col-sm-4 col-xs-12">
+      <iframe src="http://localhost:8000/pH.html" width="2100" height="800" frameborder="no"></iframe>
+    </div>
+-->
+
+{% endblock %}
+
+
+{% block page_script %}
+<!-- Page script -->
+<script>
+	function getData(callback) {
+	    let field1 = $('#field1').val();
+	    let field2 = $('#field2').val();
+	    let sensor1 = $('#sensor1').val();
+	    let sensor2 = $('#sensor2').val() || "";
+	    let starttime = $('#start-time')[0].value;
+	    let endtime = $('#end-time')[0].value + " 23:59:59";
+	    let interval = $('#interval').val();
+	    $.ajax({
+	      'url': '/api/datas?f1=' + field1 + '&f2=' + field2 + '&s1=' + sensor1 +'&s2=' + sensor2 + '&st=' + starttime + '&et=' + endtime + '&i=' + interval,
+	    }).done((data) => {
+	      if (callback && data){
+		callback(data);
+	      } else if (callback) {
+		callback();
+	      }
+	    }).fail(() => {
+	      callback();
+	    });
+	  }
+
+function update() {
+    getData((data) => {
+        if (!data) {
+            return;
+        }
+        
+        let traces = [];
+        let layout = {
+            xaxis: {
+                title: 'Time',
+                tickformat: '%Y-%m-%d %H:%M:%S',
+                tickangle: 45
+            },
+            yaxis: {
+                title: 'Sensor'
+            }
+        };
+        
+        let sensors = Object.keys(data);
+        console.log('sensors: ', sensors);
+        if (!sensors.length) {
+            return;
+        }
+
+        let interval = $('#interval').val();
+        let plotMethod = $('#plotmethod').val();
+
+        let yValues = [];
+        let zValues = [];
+        let xValues = [];
+
+        for (let i = 0; i < sensors.length; i++) {
+            let sensor = sensors[i];
+            let fields = Object.keys(data[sensor]);
+            if (!fields.length) {
+                continue;
+            }
+
+            let field = fields[0];
+            let sensorData = data[sensor][field];
+
+            let timestamps = [];
+            if (interval == 'day') {
+                timestamps = sensorData.map(item => `${item.date}`);
+            } else if (interval == 'hour') {
+                timestamps = sensorData.map(item => `${item.date} ${item.hour}:00:00`);
+            } else if (interval == 'minute') {
+                timestamps = sensorData.map(item => `${item.date} ${item.hour}:${item.minute}:00`);
+            } else {
+                timestamps = sensorData.map(item => item.timestamp);
+            }
+
+            let values = sensorData.map(item => parseFloat(item.value));
+
+            if (plotMethod === 'heatmap') {
+                yValues = yValues.concat(Array(timestamps.length).fill(`${field} - ${sensor}`));
+                zValues = zValues.concat(values);
+                xValues = xValues.concat(timestamps);
+            } else {
+                let trace = {
+                    x: timestamps,
+                    y: values,
+                    mode: 'lines+markers',
+                    type: 'scatter',
+                    name: `${field} - ${sensor}`
+                };
+                if (plotMethod === 'line') {
+                    trace.mode = 'lines+markers';
+                } else if (plotMethod === 'scatter') {
+                    trace.mode = 'markers';
+                } else if (plotMethod === 'box') {
+                    trace = {
+                        y: values,
+                        type: 'box',
+                        name: `${field} - ${sensor}`
+                    };
+                } else if (plotMethod === 'bar') {
+                    trace.type = 'bar';
+                    trace.mode = undefined;
+                }
+                traces.push(trace);
+            }
+        }
+
+        if (plotMethod === 'heatmap') {
+            let trace = {
+                x: xValues,
+                y: yValues,
+                z: zValues,
+                type: 'heatmap',
+                name: 'Heatmap',
+                colorscale: 'Viridis'
+            };
+            traces.push(trace);
+        }
+
+        Plotly.newPlot("plot", traces, layout);
+    });
+}
+
+
+  function download_field1() {
+    download_field($('#field1').val(),
+                   $('#sensor1').val(),
+                   $('#start-time')[0].value,
+                   $('#end-time')[0].value,
+                   $('#interval').val());
+  }
+  
+  function download_field(field, sensor, starttime, endtime, interval, limit) {
+    let a = document.createElement('a');;
+    a.href = '/api/export_datas?f=' + field + '&s=' + sensor + '&st=' + starttime + '&et=' + endtime + ' 23:59:59&i=' + interval;
+    a.download = field + '_' + sensor + '_' + starttime + '_' + endtime + '.csv';
+    a.click();
+  }
+  
+  function getFormatDate(date) {
+    let year = date.getFullYear();
+    let month = '' + (date.getMonth() + 1);
+    let day = '' + date.getDate();
+
+    if (month.length < 2) month = '0' + month;
+    if (day.length < 2) day = '0' + day;
+
+    return [year, month, day].join('-');
+  }
+  
+  var apps = null;
+  $(() => {
+    apps = new Vue({ //建立一個新的vue
+      el: '#app', //此vue控制的html id為"app"，也就是說此vue將會操控擁有id="app"的html元素
+      data: function () { //定義了該Vue實例的資料屬性，包括fields、active_field1、active_sensor1、active_field2和active_sensor2
+        fields = {{ fields|safe }}.filter((data)=>{return data.sensors.length});
+        active_field1 = fields[0].name;
+        active_sensor1 = fields[0]['sensors'];
+        return {
+          fields: fields,
+          active_field1: active_field1,
+          active_sensor1: active_sensor1,
+          active_field2: '',
+          active_sensor2: []
+        }
+      },
+      methods: { //定義了該 Vue 實例的方法，包括 field1_change 和 field2_change
+        field1_change(e) {
+          this.active_sensor1 = [];
+          this.fields.forEach((field) => {
+            if (field.name == e.target.value) {
+              this.active_sensor1 = field['sensors'];
+            }
+          })
+        },
+        field2_change(e) {
+          this.active_sensor2 = [];
+          this.fields.forEach((field) => {
+            if (field.name == e.target.value) {
+              this.active_sensor2 = field['sensors'];
+            }
+          })
+        }
+      },
+    })
+    
+    // set default time
+    let d = new Date();
+    $('#end-time')[0].value = getFormatDate(d);
+    d.setDate(d.getDate() - 1);
+    $('#start-time')[0].value = getFormatDate(d);  
+
+  });
+
+
+	$(document).ready(function(){
+		$('#upload').click(function(){
+		    var csv = $('#filename');
+		    var csvFile = csv[0].files[0];
+		    var ext = csv.val().split(".").pop().toLowerCase();
+
+		    if($.inArray(ext, ["csv"]) === -1){
+		        alert('upload csv');
+		        return false;
+		    }
+		    if(csvFile != undefined){
+		        reader = new FileReader();
+		        reader.onload = function(e){
+
+		            csvResult = e.target.result.split(/\r|\n|\r\n/);
+		            $('.csv').append(csvResult);
+		        }
+		        reader.readAsText(csvFile);
+		    }
+		});
+	});
+</script>
+
+{% endblock %}

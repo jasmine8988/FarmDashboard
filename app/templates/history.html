@@ -15,7 +15,7 @@
 
   <div class="col-sm-4 col-xs-12">
     <label for="sensor">{{ _('Sensor') }}</label>
-    <select class="form-control" id="sensor" v-model="active_sensor">
+    <select class="form-control" id="sensor" v-model="active_sensor" @change="sensor_change">
       <template v-for="sensor in active_sensors">
         <option :value="sensor.df_name">{{ '{{' }}sensor.alias{{ '}}' }}</option>
       </template>
@@ -24,7 +24,7 @@
 
   <div class="col-sm-4 col-xs-12">
     <label for="range">{{ _('Time Slot') }}</label>
-    <select class="form-control" id="interval">
+    <select class="form-control" id="interval" v-model="selected_interval" @change="time_slot_change">
       <option value="1440">24{{ _('Hours') }}</option>
       <option value="60">1{{ _('Hour') }}</option>
       <option value="10">10{{ _('Minutes') }}</option>
@@ -50,12 +50,24 @@
       <div class="box-body">
         <div id="interactive" style="height: 300px;"></div>
       </div>
-      <!-- /.box-body-->
+      <!-- /.box-body -->
     </div>
     <!-- /.box -->
-
   </div>
   <!-- /.col -->
+  
+  <div class="col-sm-6 col-xs-12">
+  <br>
+  <!-- STL chart -->
+    <div id="STL-chart"></div>
+  </div>
+  
+  <div class="col-sm-6 col-xs-12">
+  <br>
+  <!-- Outlier chart -->
+    <div id="outlier-chart"></div>
+  </div>
+  
 </div>
 
 {% endblock %}
@@ -63,53 +75,6 @@
 {% block page_script %}
 <!-- Page script -->
 <script>
-  var interactive_plot = null;
-  var updateInterval = 1000; //Fetch data ever x milliseconds
-  var apps = null; // Vue app
-  var previousPoint = null, previousLabel = null, temp_data = null;
-
-  $.fn.UseTooltip = function () {
-    $(this).bind("plothover", function (event, pos, item) {
-      if (item) {
-        if ((previousLabel != item.series.label) || 
-           (previousPoint != item.dataIndex)) {
-          previousPoint = item.dataIndex;
-          previousLabel = item.series.label;
-          $("#tooltip").remove();
-
-          let idx = item.datapoint[0];
-          let value = item.datapoint[1];
-
-          let color = item.series.color;                        
-       
-          showTooltip(item.pageX,
-                      item.pageY,
-                      color,
-                      temp_data[idx][0] + "<br><strong>" + value + "</strong>");
-          }
-      } else {
-        $("#tooltip").remove();
-        previousPoint = null;
-      }
-    });
-  };
-
-  function showTooltip(x, y, color, contents) {
-    $('<div id="tooltip">' + contents + '</div>').css({
-      position: 'absolute',
-      display: 'none',
-      top: y - 10,
-      left: x + 10,
-      border: '2px solid ' + color,
-      padding: '3px',
-      'font-size': '9px',
-      'border-radius': '5px',
-      'background-color': '#fff',
-      'font-family': 'Verdana, Arial, Helvetica, Tahoma, sans-serif',
-      opacity: 0.9
-    }).appendTo("body").fadeIn(200);
-  }
-
   function getDate(date) {
     let year = date.getFullYear();
     let month = '' + (date.getMonth() + 1);
@@ -121,7 +86,6 @@
 
     if (month.length < 2) month = '0' + month;
     if (day.length < 2) day = '0' + day;
-
     if (hour.length < 2) hour = '0' + hour;
     if (minute.length < 2) minute = '0' + minute;
     if (second.length < 2) second = '0' + second;
@@ -130,14 +94,18 @@
   }
 
   function getData(field, sensor, interval, callback) {
-    let d = new Date();
-    et = getDate(d);
+    let d = new Date(); // 當前時間
+    let et = getDate(d); // 例如：2024-10-07 18:02:48
+
+    // 根據 interval 計算起始時間（如24小時前）
     d.setMinutes(d.getMinutes() - Number(interval));
-    st = getDate(d);
+    let st = getDate(d); // 例如：2024-10-06 18:02:48
+
+    // AJAX 請求，根據時間範圍請求數據
     $.ajax({
-      'url': '/api/datas/' + field + '/' + sensor + '?limit=9999999&start=' + st + '&end=' + et + '&i=' + interval,
+      'url': '/api/datas/' + field + '/' + sensor + '?limit=9999999&start=' + st + '&end=' + et,
     }).done((data) => {
-      if(callback && data && data[sensor]) {
+      if (callback && data && data[sensor]) {
         callback(data[sensor].reverse());
       } else {
         callback([]);
@@ -147,138 +115,58 @@
     });
   }
 
-  /*
-  var realtime       = 'on' //If == to on then fetch data every x seconds. else stop fetching
   function update() {
+    let interval = $('#interval').val(); // 從選擇器獲取選定的 interval 值（例如24小時）
+    
+    getData(apps.active_field, apps.active_sensor, interval, (data) => {
+      let x = [];
+      let y = [];
 
-    interactive_plot.setData([getRandomData()])
-
-    // Since the axes don't change, we don't need to call plot.setupGrid()
-    interactive_plot.draw()
-    if (realtime === 'on')
-      setTimeout(update, updateInterval)
-  }
-
-  //INITIALIZE REALTIME DATA FETCHING
-  if (realtime === 'on') {
-    //update()
-  }
-  //REALTIME TOGGLE
-  $('#realtime .btn').click(function () {
-    if ($(this).data('toggle') === 'on') {
-      realtime = 'on'
-    }
-    else {
-      realtime = 'off'
-    }
-    update()
-  })*/
-
-
-  function update() {
-    getData($('#field').val(), $('#sensor').val(), $('#interval').val(), (data) => {
-      let res = [];
-      let max = -Infinity;
-      let min = Infinity;
-      let x_tick = [];
-      let interval = Math.ceil(data.length / 10);
-      data.forEach((element, idx) => {
-        let value = parseFloat(element[1]);
-        if (value > max) {
-          max = value;
-        }
-        if (value < min) {
-          min = value;
-        }
-        res.push([idx, value]);
-        if (idx % interval == 0) {
-          x_tick.push([idx, element[0]]);
-        }
-      })
-
-      let y_max_index = 10 ** (Math.log10(max) - 1);
-      if (!y_max_index) { y_max_index = 1;}
-      let y_max = (Math.ceil(max / y_max_index) + 1) * y_max_index;
-
-      let y_min_index = 10 ** (Math.log10(min) - 1);
-      if (!y_min_index) { y_min_index = 1;}
-      let y_min = (Math.round(min / y_min_index) - 1) * y_min_index;
-
-      if (y_max == y_min) {
-        y_max += 10;
-        y_min -= 10;
-      }
-
-      if (y_min < 0 && min >= 0) {
-        y_min = 0;
-      }
-
-      $.plot('#interactive', [res], {
-        grid  : {
-          borderColor: '#f3f3f3',
-          borderWidth: 1,
-          tickColor  : '#f3f3f3',
-          hoverable: true,
-          borderWidth: 2,
-          backgroundColor: { colors: ["#ffffff", "#EDF5FF"] }
-        },
-        series: {
-          shadowSize: 0, // Drawing is faster without shadows
-          color     : '#3c8dbc',
-          lines : {
-            fill : true, //Converts the line chart to area chart
-            color: '#3c8dbc',
-            show: true
-          },
-        },
-        yaxis : {
-          min: y_min,
-          max: y_max,
-          show: true
-        },
-        xaxis : {
-          show: true,
-          ticks: x_tick,
-          tickColor: 'transparent'
-        }
+      data.forEach((element) => {
+        x.push(element[0]);  // 日期或時間
+        y.push(parseFloat(element[1]));  // 值
       });
-      temp_data = data;
-      $('#interactive').UseTooltip();
 
-      setTimeout(update, updateInterval);
+      // 使用 Plotly 繪製圖表
+      var trace1 = {
+        x: x,
+        y: y,
+        mode: 'lines',
+        name: 'Data',
+        fill: 'tozeroy', // 使用面積圖繪製
+        marker: { size: 8 }
+      };
+
+      var layout = {
+        title: 'Data Chart',
+        xaxis: {
+          title: 'Time',
+          rangeslider: {  // 啟用 rangeslider 功能
+            visible: true
+          },
+          range: [x[0], x[x.length - 1]]  // 初始時間範圍，顯示 interval 內的數據
+        },
+        yaxis: { title: 'Value' },
+        hovermode: 'closest'  // 啟用互動提示
+      };
+
+      Plotly.newPlot('interactive', [trace1], layout);
     });
   }
 
   $(() => {
-    $.plot('#interactive', [], {
-      grid  : {
-        borderColor: '#f3f3f3',
-        borderWidth: 1,
-        tickColor  : '#f3f3f3'
-      },
-      series: {
-        shadowSize: 0, // Drawing is faster without shadows
-        color     : '#3c8dbc'
-      },
-      lines : {
-        fill : true, //Converts the line chart to area chart
-        color: '#3c8dbc'
-      },
-      yaxis : {
-        show: true
-      },
-      xaxis : {
-        show: true,
-        tickColor: 'transparent'
-      }
-    })
-    $('#interactive').UseTooltip();
+    // 初始化 Plotly 圖表為空
+    Plotly.newPlot('interactive', [], {
+      title: 'Data Chart',
+      xaxis: { title: 'Time', rangeslider: {} },  // 初始圖表也啟用時間軸縮放功能
+      yaxis: { title: 'Value' },
+    });
 
     // set Vue data
     apps = new Vue({
       el: '#app',
       data: function () {
-        fields = {{ fields|safe }}.filter((data)=>{return data.sensors.length});
+        fields = {{ fields|safe }}.filter((data) => { return data.sensors.length; });
         active_field = fields[0].name;
         active_sensors = fields[0]['sensors'];
         active_sensor = fields[0]['sensors'][0]['df_name'];
@@ -286,22 +174,28 @@
           fields: fields,
           active_field: active_field,
           active_sensors: active_sensors,
-          active_sensor: active_sensor
-        }
+          active_sensor: active_sensor,
+          selected_interval: '1440'  // 預設為24小時
+        };
       },
       methods: {
-        field_change(e) {
-          this.active_sensors = [];
-          this.fields.forEach((field) => {
-            if (field.name == e.target.value) {
-              this.active_sensors = field['sensors'];
-              this.active_sensor = this.active_sensors[0]['df_name'];
-            }
-          })
+        field_change() {
+          // 當 field 改變時，更新 sensors 列表並更新選中的 sensor
+          const selectedField = this.fields.find(field => field.name === this.active_field);
+          this.active_sensors = selectedField.sensors;
+          this.active_sensor = this.active_sensors[0].df_name;  // 選擇該 field 的第一個 sensor
+          update();  // 更新圖表
+        },
+        sensor_change() {
+          update();  // 當 sensor 改變時，重新執行 update
+        },
+        time_slot_change() {
+          update();  // 當 Time Slot 改變時，重新更新圖表
         }
       }
-    })
-
+    });
+    
+    // 讓dashboard.html點了more info.後可以直接跳轉到history
     let hash = window.location.hash.replace('#', '').split(',');
     if(hash[0]){
       apps.active_field = hash[0];
@@ -316,7 +210,10 @@
       apps.active_sensor = hash[1];
     }
 
-    update();
+    // 初始化圖表更新，頁面載入時執行一次 update
+    update();  // 初次載入顯示 interval 內的數據
   });
 </script>
+
+
 {% endblock %}

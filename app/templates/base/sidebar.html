@@ -8,7 +8,9 @@
       <li class="header"></li>
       <li><a href="/{{ g.get('lang_code') }}/dashboard"><i class="fa fa-dashboard"></i> <span>{{ _('Dashboard') }}</span></a></li>
       <li><a href="/{{ g.get('lang_code') }}/history"><i class="fa fa-book"></i> <span>{{ _('History') }}</span></a></li>
-      <li><a href="/{{ g.get('lang_code') }}/compare"><i class="fa fa-signal"></i> <span>{{ _('Compare') }}</span></a></li>
+      <!--<li><a href="/{{ g.get('lang_code') }}/compare"><i class="fa fa-download"></i> <span>{{ _('Download') }}</span></a></li> -->
+      <!--<li><a href="/{{ g.get('lang_code') }}/plot"><i class="fa fa-bar-chart"></i> <span>{{ _('Visualization') }}</span></a></li> -->
+      <li><a href="/{{ g.get('lang_code') }}/plot_number"><i class="fa fa-signal"></i> <span>{{ _('Analysis') }}</span></a></li>
       {% if is_superuser %}
       <li><a href="/{{ g.get('lang_code') }}/management"><i class="fa fa-cogs"></i> <span>{{ _('Management') }}</span></a></li>
       {% endif %}
