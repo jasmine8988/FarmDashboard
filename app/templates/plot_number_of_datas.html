@@ -140,7 +140,7 @@
         <div class="box-tools pull-right"></div>
       </div>
       <div class="box-body">
-        <div id="interactive" style="height: 500px;"></div>
+        <div id="interactive" style="height: 700px;"></div>
       </div>
     </div>  
   </div>
@@ -283,6 +283,7 @@
         }
       }  
       // 回調以處理 traces
+      console.log("✅ getTraces: 取得 traces", traces);
       callback(traces, selectedMethod);
     });
   }
@@ -447,99 +448,111 @@
   
   
   // KMeans分群
-function cluster(traces, numClusters = 3) {
+  function cluster(traces, numClusters = 3) {
     let scatterTraces = []; // 存放每個分群結果
 
     traces.forEach(trace => {
-        // 呼叫後端 API 獲取分群結果，改用 AJAX
-        $.ajax({
-            url: '/api/cluster',
-            type: 'POST',
-            contentType: 'application/json',
-            headers: {
-                'X-CSRFToken': $('meta[name="csrf-token"]').attr('content') // 加入 CSRF token
+      // 呼叫後端 API 獲取分群結果，改用 AJAX
+      $.ajax({
+        url: '/api/cluster',
+        type: 'POST',
+        contentType: 'application/json',
+        headers: {
+          'X-CSRFToken': $('meta[name="csrf-token"]').attr('content') // 加入 CSRF token
+        },
+        data: JSON.stringify({
+          timestamps: trace.timestamps,
+          values: trace.values,
+          numClusters: numClusters
+        }),
+        success: function(data) {
+          let pcaData = data.pcaData; // 從後端獲取 PCA 資料
+          let clusterLabels = data.clusterLabels; // 從後端獲取分群標籤
+
+          // 數據準備，用於展示
+          scatterTraces.push({
+            x: pcaData.map(item => item[0]), // PCA 第一主成分
+            y: pcaData.map(item => item[1]), // PCA 第二主成分
+            mode: 'markers',
+            marker: {
+              color: clusterLabels,
+              colorscale: 'Viridis',
+              size: 8
             },
-            data: JSON.stringify({
-                timestamps: trace.timestamps,
-                values: trace.values,
-                numClusters: numClusters
-            }),
-            success: function(data) {
-                let pcaData = data.pcaData; // 從後端獲取 PCA 資料
-                let clusterLabels = data.clusterLabels; // 從後端獲取分群標籤
+            text: trace.values.map((value, idx) => `${trace.field} - ${trace.sensor}<br>Value: ${value}`),
+            hoverinfo: 'text'
+          });
 
-                // 數據準備，用於展示
-                scatterTraces.push({
-                    x: pcaData.map(item => item[0]), // PCA 第一主成分
-                    y: pcaData.map(item => item[1]), // PCA 第二主成分
-                    mode: 'markers',
-                    marker: {
-                        color: clusterLabels,
-                        colorscale: 'Viridis',
-                        size: 8
-                    },
-                    text: trace.values.map((value, idx) => `${trace.field} - ${trace.sensor}<br>Value: ${value}`),
-                    hoverinfo: 'text'
-                });
-
-                // 渲染圖表
-                if (scatterTraces.length === traces.length) {
-                    Plotly.newPlot('interactive', scatterTraces, {
-                        title: 'KMeans Clustering with PCA',
-                        xaxis: { title: 'PCA Component 1' },
-                        yaxis: { title: 'PCA Component 2' },
-                        showlegend: false
-                    });
-                }
-            },
-            error: function(xhr, status, error) {
-                console.error('Error in KMeans clustering:', error);
-            }
-        });
-    });
-}
-
-
-function download() {
-  getTraces(null, (traces) => {
-    if (!traces || traces.length === 0) {
-      alert('No data available for download.');
-      return;
-    }
-
-    // Prepare CSV header
-    let csvContent = 'timestamps,' + traces.map(trace => `${trace.field}-${trace.sensor}`).join(',') + '\n';
-
-    // Collect unique timestamps // 使用 Set 收集所有 trace 的唯一時間戳，避免重複。
-    let allTimestamps = new Set();
-    traces.forEach(trace => {
-      trace.timestamps.forEach(timestamp => allTimestamps.add(timestamp));
-    });
-
-    // Sort timestamps // 將 Set 轉換為陣列，並根據時間順序對時間戳進行排序。
-    let sortedTimestamps = Array.from(allTimestamps).sort((a, b) => new Date(a) - new Date(b));
-
-    // Prepare rows of data
-    sortedTimestamps.forEach(timestamp => { // 為每個時間戳準備一行數據
-      let row = [timestamp];
-      traces.forEach(trace => { // 檢查每個 trace 是否包含該時間戳
-        let index = trace.timestamps.indexOf(timestamp); // 如果找到對應索引，插入該時間戳對應的 value
-        row.push(index !== -1 ? trace.values[index] : 'NaN'); // 如果未找到，則補上 NaN 作為缺失值
+          // 渲染圖表
+          if (scatterTraces.length === traces.length) {
+            Plotly.newPlot('interactive', 
+                            scatterTraces, {
+                              title: 'KMeans Clustering with PCA',
+                              xaxis: { title: 'PCA Component 1' },
+                              yaxis: { title: 'PCA Component 2' },
+                              showlegend: false
+                            });
+          }
+        },
+        error: function(xhr, status, error) {
+          console.error('Error in KMeans clustering:', error);
+        }
       });
-      csvContent += row.join(',') + '\n'; // 將這一行數據以逗號分隔，並追加到 csvContent 中
     });
+  }
 
-    // Create a blob and download the file
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'traces_data.csv';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-  });
-}
+
+  function convertToCSV(callback) {
+    getTraces(null, (traces) => {
+      if (!traces || traces.length === 0) {
+        alert('No data available for conversion.');
+        callback(null);
+        return;
+      }
+      // Prepare CSV header
+      let csvContent = 'timestamps,' + traces.map(trace => `${trace.field}-${trace.sensor}`).join(',') + '\n';
+      // Collect unique timestamps // 使用 Set 收集所有 trace 的唯一時間戳，避免重複
+      let allTimestamps = new Set();
+      traces.forEach(trace => {
+        trace.timestamps.forEach(timestamp => allTimestamps.add(timestamp));
+      });
+      // Sort timestamps // 將 Set 轉換為陣列，並根據時間順序對時間戳進行排序
+      let sortedTimestamps = Array.from(allTimestamps).sort((a, b) => new Date(a) - new Date(b));
+      // Prepare rows of data // 生成 CSV 內容
+      sortedTimestamps.forEach(timestamp => { // 為每個時間戳準備一行數據
+        let row = [timestamp];
+        traces.forEach(trace => { // 檢查每個 trace 是否包含該時間戳
+          let index = trace.timestamps.indexOf(timestamp); // 如果找到對應索引，插入該時間戳對應的 value
+          row.push(index !== -1 ? trace.values[index] : 'NaN'); // 缺失值填 NaN
+        });
+        csvContent += row.join(',') + '\n'; // 將這一行數據以逗號分隔，並追加到 csvContent 中
+      });
+      console.log("✅ CSV 產生成功");
+      callback(csvContent);  // 透過 callback 把 CSV 回傳
+    });
+  }
+
+
+  function download() {
+    convertToCSV((csvContent) => {
+      if (!csvContent) {
+        alert('No data to download.');
+        return;
+      }
+
+      let filename = 'traces_data.csv';
+      // 建立 Blob 物件
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      // 建立 <a> 下載連結並觸發下載
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    });
+  }  
 
 
   function addNewDatatalk() {
@@ -550,78 +563,76 @@ function download() {
     }
   }
 
-function sendRequestToAITalk(user, name) {
-    return new Promise((resolve, reject) => {
-        console.log(`📡 發送請求到 /api/proxy，user: ${user}, name: ${name}`);
 
-        fetch('/api/proxy', {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': $('meta[name="csrf-token"]').attr('content')
-            },
-            body: JSON.stringify({ user: user, name: name })
+  function sendRequestToAITalk(user, name) {
+    return new Promise((resolve, reject) => {
+      console.log(`📡 發送請求到 /api/get_datatalk_id，user: ${user}, name: ${name}`);
+
+      fetch('/api/get_datatalk_id', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': $('meta[name="csrf-token"]').attr('content')
+        },
+        body: JSON.stringify({ user: user, name: name })
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+        return response.json();
+      })
+      .then(data => {
+        console.log("✅ AITalk 回應:", data);
+
+        return fetch('/api/save_datatalk_method', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': $('meta[name="csrf-token"]').attr('content')
+          },
+          body: JSON.stringify({
+            user: user,
+            name: name,
+            datatalk_data: data
+          })
         })
         .then(response => {
-            if (!response.ok) {
-                throw new Error(`HTTP error! Status: ${response.status}`);
-            }
-            return response.json();
+          if (!response.ok) {
+            throw new Error(`Flask API 錯誤: ${response.status}`);
+          }
+          return response.json();
         })
-        .then(data => {
-            console.log("✅ AITalk 回應:", data);
+        .then((savedData) => {
+          alert(`已成功新增 DataTalk 方法：${name}`);
 
-            return fetch('/api/save_datatalk_method', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': $('meta[name="csrf-token"]').attr('content')
-                },
-                body: JSON.stringify({
-                    user: user,
-                    name: name,
-                    datatalk_data: data
-                })
-            })
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error(`Flask API 錯誤: ${response.status}`);
-                }
-                return response.json();
-            })
-            .then((savedData) => {
-                alert(`✅ 已成功新增 DataTalk 方法：${name}`);
+          // 更新 Vue 的 `dataTalkMethods`
+          app.dataTalkMethods.push({
+            id: savedData.id,
+            name: name,
+            user: user,
+            datatalk_data: JSON.stringify(data)
+          });
 
-                // ✅ **更新 Vue 的 `dataTalkMethods`**
-                app.dataTalkMethods.push({
-                    id: savedData.id,
-                    name: name,
-                    user: user,
-                    datatalk_data: JSON.stringify(data)
-                });
+          // 更新 HTML 選單
+          let select = document.querySelector(".form-control");
+          let option = document.createElement("option");
+          option.value = `datatalk-${savedData.id}`;
+          option.textContent = `${name}`;
+          option.setAttribute("data-user", user);
+          option.setAttribute("data-data", JSON.stringify(data));
+          select.appendChild(option);
 
-                // ✅ **更新 HTML 選單**
-                let select = document.querySelector(".form-control");
-                let option = document.createElement("option");
-                option.value = `datatalk-${savedData.id}`;
-                option.textContent = `${name}`;
-                option.setAttribute("data-user", user);
-                option.setAttribute("data-data", JSON.stringify(data));
-                select.appendChild(option);
-
-                resolve(savedData);
-            });
-        })
-        .catch(error => {
-            console.error("❌ 發生錯誤:", error);
-            alert(error.message || "請求失敗");
-            reject(null);
+          resolve(savedData);
         });
+      })
+      .catch(error => {
+        console.error("❌ 發生錯誤:", error);
+        alert(error.message || "請求失敗");
+        reject(null);
+      });
     });
-}
-
-
-
+  }
 
 
   function getFormatDate(date) {
@@ -682,22 +693,6 @@ function sendRequestToAITalk(user, name) {
           // 調用外部的 getTraces 函數，並將選擇的繪圖方法和回調傳入
           getTraces(this.selectedMethod, visualization);  // `plot` 作為回調函數
         }
-      },
-      updateIframeUrl() {
-        let selected = this.customMethods.find(method => method.id === this.selectedMethod);
-        if (selected) {
-          this.iframeUrl = selected.url;
-        } else {
-          this.iframeUrl = '';
-        }
-        this.$nextTick(() => {
-          let interactiveDiv = document.getElementById('interactive');
-          if (this.iframeUrl) {
-            interactiveDiv.innerHTML = `<iframe src="${this.iframeUrl}" style="width:100%; height:600px; border:none;"></iframe>`;
-          } else {
-            interactiveDiv.innerHTML = '';
-          }
-        });
       },      
       // 處理選單變更
       handleMethodChange() {
@@ -714,12 +709,10 @@ function sendRequestToAITalk(user, name) {
         }
       },
       loadCustomMethod() {
-
         let methodId = this.selectedMethod.replace("datatalk-", "");
         console.log("🔍 嘗試載入 DataTalk ID:", methodId);
 
         let selectedMethod = this.dataTalkMethods.find(method => method[3].id == methodId);
-    
         if (!selectedMethod) {
           console.error("❌ 找不到對應的 DataTalk 方法:", methodId);
           return;
@@ -727,11 +720,64 @@ function sendRequestToAITalk(user, name) {
 
         console.log("✅ 找到對應 DataTalk 方法:", selectedMethod);
 
-        this.iframeUrl = `https://aitalk.danny.iottalk.tw/datatalk#/${methodId}/dataset-mgmt`;
+        let user_id = selectedMethod[3].user_id;
+        let id = selectedMethod[3].id;
+        console.log("user_id: ", user_id);
+        console.log("id", id)
 
-        this.$nextTick(() => {
-          let interactiveDiv = document.getElementById("interactive");
-          interactiveDiv.innerHTML = `<iframe src="${this.iframeUrl}" style="width:100%; height:600px; border:none;"></iframe>`;
+        // 直接呼叫 convertToCSV，它內部會執行 getTraces()
+        convertToCSV((csvContent) => {
+          if (!csvContent) {
+            alert("❌ 無法產生 CSV，請確認數據是否存在");
+            return;
+          }
+          
+          let now = new Date();
+          let timestamp = now.getFullYear() + "_" +
+                          String(now.getMonth() + 1).padStart(2, "0") + "_" +
+                          String(now.getDate()).padStart(2, "0") + "_" +
+                          String(now.getHours()).padStart(2, "0") + "_" +
+                          String(now.getMinutes()).padStart(2, "0") + "_" +
+                          String(now.getSeconds()).padStart(2, "0");
+          let filename = `data_${id}_${timestamp}.csv`;  // 動態檔名
+
+          let requestData = {
+            user_id: user_id,
+            id: id,
+            file: csvContent,
+            name: filename
+          };
+
+          console.log("📡 發送 CSV 到後端:", requestData);
+
+          fetch("/api/send_csv_to_datatalk", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-CSRFToken": document.querySelector("meta[name='csrf-token']").getAttribute("content")
+            },
+            body: JSON.stringify(requestData)
+          })
+          .then(response => response.json())
+          .then(data => {
+            if (data.status === "success") {
+              console.log("✅ DataTalk API 回應:", data);
+
+              this.iframeUrl = `https://aitalk.danny.iottalk.tw/datatalk#/${methodId}/featextra`;
+              this.$nextTick(() => {
+                let interactiveDiv = document.getElementById("interactive");
+                interactiveDiv.innerHTML = `<iframe src="${this.iframeUrl}" style="width:100%; height:800px; border:none;"></iframe>`;
+                // interactiveDiv.style.height = "100%";
+              });
+            } else {
+              console.error("❌ DataTalk API 回應錯誤:", data.message);
+              alert(`❌ 伺服器錯誤: ${data.message}`);
+            }
+          })
+          .catch(error => {
+            console.error("❌ 發送請求時發生錯誤:", error);
+            alert("❌ 發送請求時發生錯誤，請檢查網路連線");
+          });
         });
       }
     },
@@ -752,13 +798,13 @@ function sendRequestToAITalk(user, name) {
         try {
             let dataText = datatalkElement.textContent.trim();
             this.dataTalkMethods = dataText ? JSON.parse(dataText) : [];
-            console.log("✅ 成功載入 DataTalk 方法:", this.dataTalkMethods);
+            console.log("成功載入 DataTalk 方法:", this.dataTalkMethods);
         } catch (error) {
-            console.error("❌ JSON 解析錯誤:", error);
+            console.error("JSON 解析錯誤:", error);
             this.dataTalkMethods = [];
         }
       } else {
-        console.warn("⚠️ `datatalkMethods` script 未找到");
+        console.warn("`datatalkMethods` script 未找到");
         this.dataTalkMethods = [];
       }
     }
