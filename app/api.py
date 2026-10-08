@@ -26,10 +26,17 @@ from ccmapi.v0.deviceobject import create as create_do
 from ccmapi.v0.alias import set as set_alias
 from . import ccm_utils
 
-ccm_config.config.api_url = "https://classgui.iottalk.tw/api/v0"
+ccm_config.config.api_url = ccm_utils.CCM_URL
 
 log = logging.getLogger("\033[1;33m[API]: \033[0m")
 api = Blueprint('API', __name__)
+
+
+def dashboard_url():
+    # 優先使用 config.SERVER_URL（自己的 Dashboard 網址），未設定時使用 localhost
+    if config.SERVER_URL:
+        return config.SERVER_URL.rstrip('/')
+    return f"http://localhost:{config.port or 5000}"
 
 
 @api.route('/datas/<string:field>', methods=['GET'])
@@ -800,7 +807,7 @@ def active_field(field_name):
         session_db.commit()
 
         # ✅ 回到來源頁（沒有就回 dashboard）
-        nxt = request.args.get('next') or '/en/dashboard'
+        nxt = request.args.get('next') or '/en/dashboard_dropdown'
         return redirect(nxt)
 
     except Exception as e:
@@ -992,7 +999,7 @@ def sync_odf_from_idf(project_name):
         if has_dashboard_do:
             print(f"⚠️ 專案 {project_name} 已存在 Dashboard DO，跳過建立")
             return jsonify({
-                "url": f"http://localhost:{config.port}/api/active_field/{device_name}",
+                "url": f"{dashboard_url()}/api/active_field/{device_name}",
                 "error": None
             })
 
@@ -1072,7 +1079,7 @@ def sync_odf_from_idf(project_name):
 
         # === Step 11: 回傳 URL ===
         return jsonify({
-            "url": f"http://localhost:{config.port}/api/active_field/{device_name}",
+            "url": f"{dashboard_url()}/api/active_field/{device_name}",
             "error": None
         })
 
@@ -1082,3 +1089,85 @@ def sync_odf_from_idf(project_name):
     except Exception as e:
         print(f"[GENERAL ERROR] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+########## DataTalk ##########
+
+def create_databank(project_name):
+    """在 DataTalk 建立與專案同名的 databank，並存入 datatalk_method 資料表"""
+    payload = {"user": config.DATATALK_USER, "name": project_name}
+    try:
+        response = requests.put(config.DATATALK_DATABANK_URL, json=payload, timeout=5)
+    except requests.RequestException as e:
+        raise RuntimeError(f"Failed to connect to DataTalk: {e}")
+
+    log.info(f"[Databank] DataTalk status={response.status_code}, text={response.text}")
+    try:
+        dt_data = response.json()
+    except ValueError:
+        raise RuntimeError(f"Invalid JSON from DataTalk: {response.text}")
+
+    # 409: databank 已存在
+    if response.status_code == 409:
+        return dt_data, False
+
+    # 200: 新建成功，格式如 {"user_id": 1, "name": "1117", "id": 7, "link": "/datatalk/databank/7/", "state": "ok"}
+    if response.status_code != 200 or dt_data.get("state") != "ok":
+        raise RuntimeError(f"Unexpected response from DataTalk: {response.status_code}, {dt_data}")
+
+    try:
+        new_entry = db.models.DatatalkMethod(user=config.DATATALK_USER,
+                                             name=project_name,
+                                             datatalk_data=json.dumps(dt_data, ensure_ascii=False))
+        g.session.add(new_entry)
+        g.session.commit()
+    except Exception as e:
+        g.session.rollback()
+        raise RuntimeError(f"Failed to save databank to DB: {e}")
+    return dt_data, True
+
+
+@api.route('/field_databank', methods=['GET'])
+@utils.required_login
+def get_field_databank():
+    """依照 field_name 去掉 '_Dashboard' 查 datatalk_method，回傳這個 field 對應的 databank 資訊"""
+    field_name = request.args.get('field_name')
+    if not field_name:
+        return jsonify({"state": "error", "message": "missing field_name"}), 400
+
+    base_name = field_name[:-len('_Dashboard')] if field_name.endswith('_Dashboard') else field_name
+    row = (g.session.query(db.models.DatatalkMethod)
+                    .filter_by(user=config.DATATALK_USER, name=base_name)
+                    .first())
+    if not row:
+        return jsonify({"state": "not_found", "message": f"no databank for field '{field_name}'"}), 404
+
+    try:
+        dt = json.loads(row.datatalk_data)
+    except (TypeError, ValueError):
+        return jsonify({"state": "error", "message": "invalid datatalk_data json"}), 500
+
+    if not dt.get("id"):
+        return jsonify({"state": "error", "message": "no id in datatalk_data"}), 500
+
+    return jsonify({"state": "ok", "databank_id": dt["id"], "link": dt.get("link"), "raw": dt})
+
+
+########## DeepSeek（頁面尚未完成，先保留 API） ##########
+
+@api.route('/deepseek_analyze', methods=['POST'])
+@utils.required_login
+def deepseek_analyze():
+    dataset = request.json.get("dataset")
+    response = requests.post(
+        config.DEEPSEEK_API_URL,
+        json={
+            "model": "deepseek-r1:70b",
+            "prompt": f"請使用 HTML 格式輸出，例如使用 <strong> 而不是 ** 來加粗，並且不要回傳任何 Markdown 語法。使用繁體中文幫我分析這個資料集:{dataset}",
+            "stream": False,
+            "keep_alive": -1
+        },
+        timeout=300
+    )
+    reply = response.json().get("response", "模型沒有回應")
+    return jsonify({"message": reply})

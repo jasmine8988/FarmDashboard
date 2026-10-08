@@ -1,0 +1,159 @@
+{% extends 'base/base.html' %} 
+
+{# ------ ⬇ Header：顯示「目前場域」並用 switchField 切換 ⬇ ------ #}
+{% block header %}
+  {# 找出後端標記的 active_field，沒有就拿第一個 #}
+  {% set active_field = fields | selectattr("is_active") | list | first %}
+  {% if not active_field and fields %}
+    {% set active_field = fields[0] %}
+  {% endif %}
+
+  {% set header_title = active_field.alias %}
+  {% set header_dropdown_items = [] %}
+  {% for field in fields %}
+    {% set _ = header_dropdown_items.append({
+      'label': field.alias,
+      'onclick': "switchField('%s', '%s')" % (field.alias, field.name)
+    }) %}
+  {% endfor %}
+
+  {% include 'base/header.html' %}
+{% endblock %}
+
+{% block page_content %}
+<style>
+  html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  .iframe-container {
+    height: calc(100vh - 60px);  /* 留一點給 header */
+    width: 100%;
+  }
+
+  .iframe-container iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+  }
+</style>
+
+<div class="iframe-container" style="margin-top: -30px; margin-left: -20px;">
+  {# src 先留空，等 JS 根據 field 決定要載哪個 URL #}
+  <iframe id="databank-iframe" src="" allowfullscreen></iframe>
+</div>
+{% endblock %}
+
+{% block page_script %}
+<script>
+  // label（alias）對應表：純顯示用
+  const fieldLabelMap = {
+    {% for field in fields %}
+      '{{ field.name }}': '{{ field.alias }}'{% if not loop.last %},{% endif %}
+    {% endfor %}
+  };
+
+  // 共用：實際去後端查 databank id，然後更新 iframe
+  function applyField(fieldName) {
+    const iframe = document.getElementById('databank-iframe');
+    const titleEl = document.getElementById('current-databank-title');
+    const label = fieldLabelMap[fieldName] || fieldName;
+
+    if (titleEl) {
+      titleEl.innerText = label;
+    }
+
+    // 先清空 iframe，避免殘影
+    if (iframe) {
+      iframe.src = '';
+    }
+
+    // 呼叫後端 API 取得 databank_id
+    const apiUrl = `/api/field_databank?field_name=${encodeURIComponent(fieldName)}`;
+
+    fetch(apiUrl, { credentials: 'include' })
+      .then(function (res) {
+        if (!res.ok) {
+          // 404 / 500 都會進來這邊
+          throw new Error('HTTP ' + res.status);
+        }
+        return res.json();
+      })
+      .then(function (data) {
+        if (data.state !== 'ok') {
+          console.warn('FieldDatabank state != ok:', data);
+          // fallback 到 Datatalk 首頁
+          if (iframe) {
+            iframe.src = 'https://aitalk.danny.iottalk.tw/datatalk';
+          }
+          return;
+        }
+
+        const databankId = data.databank_id;
+        let finalUrl;
+
+        if (databankId) {
+          finalUrl = `https://aitalk.danny.iottalk.tw/datatalk/#/${databankId}/dataset-mgmt`;
+        } else {
+          finalUrl = 'https://aitalk.danny.iottalk.tw/datatalk';
+        }
+
+        if (iframe) {
+          iframe.src = finalUrl;
+        }
+
+        // 記錄目前場域（跟 Dashboard / History 共用）
+        window.currentField = fieldName;
+        localStorage.setItem('dt_currentFieldName', fieldName);
+        localStorage.setItem('dt_currentFieldLabel', label);
+      })
+      .catch(function (err) {
+        console.error('Failed to fetch databank info for', fieldName, err);
+        // 呼叫失敗就 fallback 到 Datatalk 首頁
+        if (iframe) {
+          iframe.src = 'https://aitalk.danny.iottalk.tw/datatalk';
+        }
+      });
+  }
+
+  // header dropdown 用的切換函式（給 Jinja onclick 用）
+  function switchField(label, fieldName) {
+    applyField(fieldName);
+  }
+
+  // 頁面載入時：決定要顯示哪個 field，然後 applyField()
+  $(function () {
+    const storedName  = localStorage.getItem('dt_currentFieldName');
+
+    {% set active_field = fields | selectattr("is_active") | list | first %}
+    {% if not active_field and fields %}
+      {% set active_field = fields[0] %}
+    {% endif %}
+
+    let defaultFieldName = {% if active_field %}'{{ active_field.name }}'{% else %}null{% endif %};
+
+    let initialField = defaultFieldName;
+
+    // 優先用 localStorage 裡的「目前場域」
+    if (storedName) {
+      initialField = storedName;
+    }
+
+    if (!initialField) {
+      // 保險：沒有 initialField 就隨便挑一個
+      const allNames = [{% for field in fields %}'{{ field.name }}'{% if not loop.last %},{% endif %}{% endfor %}];
+      if (allNames.length > 0) {
+        initialField = allNames[0];
+      }
+    }
+
+    if (initialField) {
+      applyField(initialField);
+    }
+  });
+</script>
+{% endblock %}
+
+

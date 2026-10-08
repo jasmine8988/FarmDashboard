@@ -74,7 +74,7 @@ def required_superuser(f):
 
 
 def security_redirect():
-    base_url = lang_url('/dashboard')
+    base_url = lang_url('/dashboard_dropdown')
     next_url = request.args.get('next', base_url)
     if re.search(config.REDIRECT_REGEX, next_url, re.IGNORECASE):
         return redirect(next_url)

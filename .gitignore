@@ -8,3 +8,20 @@
 .DS_Store
 __pycache__
 venv
+
+# 個人 / 機密設定（範本：config_local.example.py）
+config_local.py
+db/db_init_local.json
+
+# 效能實驗數據與實驗程式碼（只留在本機）
+perf/
+da/perf_log.py
+da/DAI_perf.py
+
+# 執行紀錄
+da/err/
+*.log
+da_log.txt
+
+# 已封存的舊版檔案（只留在本機）
+_archive/

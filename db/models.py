@@ -832,3 +832,13 @@ class user_access(base):
                    ForeignKey('field.id'),
                    nullable=False)
     is_active = Column(Boolean, nullable=False, default=False)
+
+
+class DatatalkMethod(base):
+    __tablename__ = 'datatalk_method'
+    id = Column(Integer,
+                primary_key=True,
+                autoincrement=True)
+    user = Column(String(255), nullable=False)
+    name = Column(String(255), nullable=False)
+    datatalk_data = Column(Text, nullable=False)  # DataTalk 回傳的 JSON

@@ -1,0 +1,143 @@
+{% extends 'base/base.html' %} 
+
+{# ------ ⬇ Header 區塊：下拉選單顯示目前 field 名稱並切換內容 ⬇ ------ #}
+{% block header %}
+  {% set active_field = fields | selectattr("is_active") | list | first %}
+  {% set header_title = active_field.alias %}
+  {% set header_dropdown_items = [] %}
+  {% for field in fields %}
+    {% set _ = header_dropdown_items.append({'label': field.alias, 'onclick': "switchField('%s', '%s')" % (field.alias, field.name)}) %}
+  {% endfor %}
+
+  {% include 'base/header.html' %}
+{% endblock %}
+
+{# ------ ⬇ tab_title 與 content_box macro 保留，供 tab_content 使用 ⬇ ------ #}
+{% macro content_box(fieldname, sensor, value='0') -%}
+  <div class="col-lg-2 col-md-3 col-sm-4 col-xs-6">
+    <div class="small-box {{sensor.bg_color}}">
+      <div class="inner">
+        <h3 id="{{fieldname}}_{{sensor.df_name}}" data-toggle="tooltip" title="">{{value}}</h3>
+        <p style="height: 2em">{{sensor.alias}} ({{sensor.unit}})</p>
+      </div>
+      <div class="icon">
+        <i class="fa {{sensor.icon}}"></i>
+      </div>
+      <!--
+      <a href="/history?field={{fieldname}}&sensor={{sensor.df_name}}" class="small-box-footer">
+        {{ _('More info') }} <i class="fa fa-arrow-circle-right"></i>
+      </a>-->
+      <a href="/history?field={{ fieldname|urlencode }}&sensor={{ sensor.df_name|urlencode }}"
+         class="small-box-footer">More info</a>
+
+    </div>
+  </div>
+{%- endmacro %}
+
+{% macro tab_content(field) -%}
+  <div class="tab-pane{% if field.is_active %} active{% endif %}" id="{{field.name}}">
+    <div class="row">
+      {% for sensor in field.sensors %}
+        {{ content_box(field.name, sensor)}}
+      {% endfor %}
+      {% if field.iframe %}
+        <div class="col-xs-12">
+          {% if field.is_active %}
+          <iframe src="{{field.iframe}}" width="100%" height="1500px" frameBorder="0"></iframe>
+          {% else %}
+          <iframe src="" width="100%" height="1500px" loading="lazy" data-src="{{field.iframe}}"></iframe>
+          {% endif %}
+        </div>
+      {% endif %}
+    </div>
+  </div>
+{%- endmacro %}
+
+{# ------ ⬇ 頁面內容：只保留 tab-content，不使用 nav-tabs ⬇ ------ #}
+{% block page_content %}
+  <div class="tab-content">
+    {% for field in fields %}
+      {{ tab_content(field) }}
+    {% endfor %}
+    <div class="tab-pane" id="memo">
+      <div class="row">
+        <div class="col-xs-12">
+          <textarea id="user_memo" rows="10" style="width: 100%;">{{memo}}</textarea>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}
+
+{# ------ ⬇ JS 區塊：切換 field 內容與 header 文字 ⬇ ------ #}
+{% block page_script %}
+<script>
+function switchField(label, fieldName) {
+  document.getElementById('current-databank-title').innerText = label;
+
+  // 切換顯示
+  document.querySelectorAll('.tab-pane').forEach(pane => {
+    pane.classList.remove('active');
+  });
+  document.getElementById(fieldName).classList.add('active');
+
+  // 更新目前選中的 field 名稱（讓 update() 能用）
+  window.currentField = fieldName;
+  
+  // 4. 把選擇記住（跨頁面使用）
+  localStorage.setItem('dt_currentFieldName', fieldName);
+  localStorage.setItem('dt_currentFieldLabel', label);
+}
+
+// 原本的 update 函式：定期向 /api/datas/<field> 撈資料
+function update() {
+  const field = window.currentField;
+  if (!field) {
+    setTimeout(update, 1000);
+    return;
+  }
+
+  $.ajax({
+    url: '/api/datas/' + field + '?limit=1',
+    type: 'GET'
+  }).done((data) => {
+    for (const key in data) {
+      if (data[key][0]) {
+        const el = $('#' + field + '_' + key);
+        const timestamp = data[key][0][0];
+        const value = data[key][0][1];
+
+        el.html(value);  // 不判斷過期，直接顯示
+        el.attr('data-original-title', 'The last data was taken at ' + timestamp + '.');
+      }
+    }
+  }).always(() => {
+    setTimeout(update, 1000);
+  });
+}
+
+
+// 頁面載入後初始化
+$(() => {
+  const storedFieldName  = localStorage.getItem('dt_currentFieldName');
+  const storedFieldLabel = localStorage.getItem('dt_currentFieldLabel');
+  
+  // 1. 如果 localStorage 有記錄，而且頁面上有對應的 tab，就用它
+  if (storedFieldName && document.getElementById(storedFieldName)) {
+    // 呼叫你上面的 switchField，會順便設 window.currentField
+    switchField(storedFieldLabel, storedFieldName);
+  } else {
+    // 2. 否則就用後端 render 出來的預設 active tab（active_field）
+    const activePane = document.querySelector('.tab-pane.active');
+    if (activePane) {
+      window.currentField = activePane.id;
+      // header 標題一開始就是 Jinja 設好的 header_title，不用再動
+    }
+  }
+
+  update();
+});
+</script>
+
+{% endblock %}
+

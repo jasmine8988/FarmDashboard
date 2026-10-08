@@ -61,7 +61,7 @@ def render_template(*args, **argv):
 
 @view_api.route('/', methods=['GET'], strict_slashes=False)
 def root():
-    return redirect(utils.lang_url('/dashboard'))
+    return redirect(utils.lang_url('/dashboard_dropdown'))
 
 
 @view_api.route('/login/', methods=['GET', 'POST'], strict_slashes=False)
@@ -111,6 +111,12 @@ def index():
     return render_template('dashboard.html')
 
 
+@view_api.route('/dashboard_dropdown/', methods=['GET'], strict_slashes=False)
+@utils.required_login
+def dashboard_dropdown():
+    return render_template('dashboard_dropdown.html')
+
+
 @view_api.route('/history/', methods=['GET'], strict_slashes=False)
 @utils.required_login
 def history():
@@ -133,3 +139,9 @@ def profile():
 @utils.required_superuser
 def management():
     return render_template('management.html')
+
+
+@view_api.route('/datatalk/', methods=['GET'], strict_slashes=False)
+@utils.required_login
+def datatalk():
+    return render_template('one_databank.html')

@@ -1,6 +1,10 @@
 # Web Application Framework
 # https://flask.palletsprojects.com/en/1.1.x/
 flask~=1.1.4
+# Flask 1.1 不相容 Jinja2 3.x / Werkzeug 2.x / itsdangerous 2.x，需固定舊版
+Jinja2<3.0
+Werkzeug<2.0
+itsdangerous<2.0
 # Integration of Flask and WTForms
 # https://flask-wtf.readthedocs.io/en/latest/
 flask-wtf~=0.14.3
@@ -33,3 +37,6 @@ tzlocal~=2.1
 MarkupSafe==2.0.1
 
 cryptography
+
+# 另需安裝 ccmapi（IoTtalk CCM API 套件，PyPI 上沒有）：
+#   pip install git+ssh://git@gitlab.com/IoTtalk/ccmapi-py.git

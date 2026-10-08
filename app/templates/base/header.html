@@ -1,6 +1,6 @@
 <header class="main-header">
   <!-- Logo -->
-  <a href="/{{ g.get('lang_code') }}/dashboard" class="logo">
+  <a href="/{{ g.get('lang_code') }}/dashboard_dropdown" class="logo">
     <!-- mini logo for sidebar mini 50x50 pixels -->
     <span class="logo-mini"><b>{{ _('') }}</b></span>
     <!-- logo for regular state and mobile devices -->
@@ -45,7 +45,7 @@
           </a>
           <ul class="dropdown-menu">
             {% for k, v in i18n.items() %}
-            <li><a href="/{{ v }}/dashboard">{{ k }}</a></li>
+            <li><a href="/{{ v }}/dashboard_dropdown">{{ k }}</a></li>
             {% endfor %}
           </ul>
         </li>

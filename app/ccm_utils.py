@@ -1,8 +1,11 @@
 import requests
 import json
 
-GUI_SERVER_URL = "https://classgui.iottalk.tw/"
+import config
+
+GUI_SERVER_URL = config.IOTTALK_GUI_URL.rstrip('/') + '/'
 CCM_API_URL = GUI_SERVER_URL + "api/v0/"
+CCM_URL = GUI_SERVER_URL + "api/v0"  # 不含結尾斜線，供 f"{CCM_URL}/..." 與 ccmapi 使用
 
 def create_project(project_name: str):
     response = requests.put(CCM_API_URL + 'project/', json={"p_name": project_name}).json()
@@ -197,7 +200,7 @@ def get_devicefeature_list():
     return status, res
 
 def create_devicefeature(df_data: dict):
-    url = "https://classgui.iottalk.tw/api/v0/devicefeature"
+    url = CCM_API_URL + "devicefeature"
     try:
         response = requests.put(url, json=df_data)
         if response.status_code == 200:

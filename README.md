@@ -64,43 +64,47 @@
         CREATE DATABASE <db_name>;
         ```
         
-4. 修改 **config.py**，根據內部註解依序填上資料，主要為設定 DB 路徑
+    * 另需安裝 **ccmapi**（PyPI 上沒有）：
 
-    依 *注意2* 填入 **DB_CONFIG**， 修改大約在Line 13行附近
+        ```sh
+        pip3 install git+ssh://git@gitlab.com/IoTtalk/ccmapi-py.git
+        ```
 
-     
+4. 建立個人設定檔 **config_local.py**
+
+    密碼、網址等個人資訊請寫在 `config_local.py`，**不要**直接改 `config.py`。
+    `config_local.py` 已列入 `.gitignore`，不會上傳到 GitHub，其中的設定會覆蓋 `config.py` 中同名的設定。
+
+    ```sh
+    cp config_local.example.py config_local.py
+    ```
+
+    依 *注意2* 填入 **DB_CONFIG**
+
         DB_CONFIG = 'mysql+pymysql://<user_name>:<user_password>@localhost:3306/<db_name>?charset=utf8'
-     
 
-    大約在 Line 21 附近，修改  **CSM_HOST**
-    
-     
-        CSM_HOST = 'IoTtalk Server IP'
-     
-5. 修改 **api.py**，填寫 **IoTtalk CCMAPI URL**
+    填入 **CSM_HOST**
 
-    填入 **cm_config.config.api_url**， 修改大約在Line 29行附近
+        CSM_HOST = 'https://<IoTtalk Server>'
 
-     
-        ccm_config.config.api_url = "https://<IoTtalk_CCMAPI_URL>/api/v0"
+5. 在 **config_local.py** 填寫 **IoTtalk CCMAPI URL**（ccmapi 與 app/ccm_utils.py 共用）
 
-     
+        IOTTALK_GUI_URL = 'https://<IoTtalk_CCMAPI_URL>/'
 
-    大約在 Line 995 附近，修改  **URL**
-    
-     
-        "url": f"https://<Your Server IP>/api/active_field/{device_name}"
+6. 在 **config_local.py** 填寫自己的 **Dashboard 網址**
 
+    專案自動化完成後，會回傳 `<SERVER_URL>/api/active_field/<device_name>` 給 IoTtalk。
+    留空則使用 `http://localhost:<port>`。
 
-6. 修改 **app/ccm_utils.py**，一樣設定 **IoTtalk CCMAPI URL**
+        SERVER_URL = 'https://<Your Server IP>'
 
-    填入 **GUI_SERVER_URL**， 修改大約在Line 4行附近
+7. 設定 **admin** 密碼
 
-     
-        GUI_SERVER_URL = 'https://<IoTtalk_CCMAPI_URL>/'
+    ```sh
+    cp db/db_init.json db/db_init_local.json
+    ```
 
-    
-7. 修改 **db/db_init.json**，設定 **admin** 密碼
+    修改 **db/db_init_local.json** 中的 admin 密碼（此檔不會上傳，初始化時會優先讀取）。
 
 8. 資料庫初始化：
 
@@ -120,6 +124,8 @@
 
 至此 Dashboard 已啟動完成，可用指令 ```tmux a``` 查看運行狀況
 (按ctrl+b 1 查看 dashboard 主程式與 DA 運行狀況)。
+
+* Windows：建立 venv 並安裝套件後，雙擊 `start_windows.bat` 即可啟動（取代 `startup.sh`）。
 
 ### 注意
 

@@ -26,6 +26,21 @@ MQTT_encryption = False
 MQTT_User = '?'
 MQTT_PW = '?'
 
+# IoTtalk CCM GUI URL, used by ccmapi and app/ccm_utils.py
+# ex: 'https://classgui.iottalk.tw/'
+IOTTALK_GUI_URL = 'https://<IoTtalk_CCMAPI_URL>/'
+
+# This Dashboard's URL, returned to IoTtalk after project automation
+# ex: 'https://<Your Server IP>'; leave empty to use http://localhost:<port>
+SERVER_URL = ''
+
+# DataTalk databank (Analysis page)
+DATATALK_DATABANK_URL = 'https://aitalk.danny.iottalk.tw/datatalk/databank/third-databank/'
+DATATALK_USER = '<datatalk_user>'
+
+# DeepSeek (Ollama) analysis server
+DEEPSEEK_API_URL = 'http://<DeepSeek_Server_IP>:<port>/api/generate'
+
 # For the demo page without login
 # The data format is '<Field Name>':'<token>', examples are shown as follows.
 demo_token = {
@@ -43,3 +58,10 @@ SESSION_COOKIE_SECURE = False
 RESTART_SERVER_PORT = 5001
 
 i18n = {'English': 'en', '中文': 'zh_Hant_TW', 'ไทย': 'th'}
+
+# 個人 / 機密設定請寫在 config_local.py（已列入 .gitignore，不會上傳），
+# 會覆蓋上方同名設定。範本：config_local.example.py
+try:
+    from config_local import *  # noqa: F401,F403
+except ImportError:
+    pass

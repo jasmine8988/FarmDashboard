@@ -87,7 +87,7 @@ def server_error(error):
 
 @app.route('/')
 def root():
-    return redirect(utils.lang_url('/dashboard'))
+    return redirect(utils.lang_url('/dashboard_dropdown'))
 
 
 @app.route('/favicon.ico')

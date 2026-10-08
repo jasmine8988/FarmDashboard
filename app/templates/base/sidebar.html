@@ -6,10 +6,11 @@
     <!-- sidebar menu: : style can be found in sidebar.less -->
     <ul class="sidebar-menu" data-widget="tree">
       <li class="header"></li>
-      <li><a href="/{{ g.get('lang_code') }}/dashboard"><i class="fa fa-dashboard"></i> <span>{{ _('Dashboard') }}</span></a></li>
+      <li><a href="/{{ g.get('lang_code') }}/dashboard_dropdown"><i class="fa fa-dashboard"></i> <span>{{ _('Dashboard') }}</span></a></li>
       <li><a href="/{{ g.get('lang_code') }}/history"><i class="fa fa-book"></i> <span>{{ _('History') }}</span></a></li>
       <li><a href="/{{ g.get('lang_code') }}/compare"><i class="fa fa-signal"></i> <span>{{ _('Compare') }}</span></a></li>
       {% if is_superuser %}
+      <li><a href="/{{ g.get('lang_code') }}/datatalk"><i class="fa fa-bar-chart"></i> <span>{{ _('Analysis') }}</span></a></li>
       <li><a href="/{{ g.get('lang_code') }}/management"><i class="fa fa-cogs"></i> <span>{{ _('Management') }}</span></a></li>
       {% endif %}
     </ul>

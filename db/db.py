@@ -141,8 +141,11 @@ if __name__ == '__main__':
             if len(sys.argv) > 2:
                 default_file = sys.argv[2]
             else:
-                default_file = os.path.join(os.path.dirname(__file__),
-                                            'db_init.json')
+                # 優先使用含個人密碼的 db_init_local.json（不上傳），沒有才用 db_init.json
+                db_dir = os.path.dirname(__file__)
+                default_file = os.path.join(db_dir, 'db_init_local.json')
+                if not os.path.exists(default_file):
+                    default_file = os.path.join(db_dir, 'db_init.json')
 
             with open(default_file, 'r', encoding='utf8') as f:
                 init(json.load(f))
